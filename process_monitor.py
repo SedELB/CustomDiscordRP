@@ -9,6 +9,3 @@ def is_process_running(exe_name: str) -> bool:
     print('Process not found')
     return False
 
-    
-
-
