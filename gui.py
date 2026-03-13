@@ -17,8 +17,8 @@ def get_data():
 app = customtkinter.CTk()
 app.geometry("800x600")
 
-startButton = customtkinter.CTkButton(app, text="Start", command=get_data)
-stopButton = customtkinter.CTkButton(app, text="Stop", command=button_callback)
+startButton = customtkinter.CTkButton(app, text="Start")
+stopButton = customtkinter.CTkButton(app, text="Stop")
 
 clientIdEntry = customtkinter.CTkEntry(app, placeholder_text='Client ID')
 targetExeEntry = customtkinter.CTkEntry(app, placeholder_text='Target .exe')
@@ -34,5 +34,3 @@ targetExeEntry.pack()
 
 statusNameEntry.pack()
 statusStateEntry.pack()
-
-app.mainloop()
