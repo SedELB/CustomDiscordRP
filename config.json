@@ -2,14 +2,10 @@
     "clientId": "1482109796915220491",
     "profiles": [
         {
-            "targetExe": "solidworks.exe",
-            "statusName": "SolidWorks!",
-            "statusState": "solidsnake"
-        },
-        {
-            "targetExe": "solidsnake.exe",
-            "statusName": "lmao",
-            "statusState": "test"
+            "profileTitle": "Profile 1",
+            "targetExe": "explorer.exe",
+            "statusName": "File Explorer",
+            "details": "Exploring files..."
         }
     ]
 }

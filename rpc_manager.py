@@ -21,7 +21,7 @@ def is_rpc_connected():
     return _connected
 
 
-def update_presence(name, details, state, large_image_name):
+def update_presence(name, details, large_image_name):
     global RPC
     if RPC is None or not _connected:
         return
@@ -29,8 +29,7 @@ def update_presence(name, details, state, large_image_name):
     RPC.update(
         name=name,
         details=details,
-        state=state,
-        activity_type=ActivityType.LISTENING,
+        activity_type=ActivityType.PLAYING,
         large_image=large_image_name,
     )
 

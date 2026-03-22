@@ -18,7 +18,7 @@ def background_loop(data):
             rpc_manager.connect_to_discord(clientId)
             
         if active_profile and rpc_manager.is_rpc_connected():
-            rpc_manager.update_presence(active_profile['statusName'], 'Details Here', active_profile['statusState'], 'dog')
+            rpc_manager.update_presence(active_profile['statusName'], active_profile['details'], 'dog')
         
         if not active_profile and rpc_manager.is_rpc_connected():
             rpc_manager.clear_presence()
@@ -53,6 +53,7 @@ def on_start_clicked():
 def on_stop_clicked():
     global running
     running = False
+    rpc_manager.clear_presence()
     print('Background thread stopped.')
 
 # Thread running while GUI is closed
