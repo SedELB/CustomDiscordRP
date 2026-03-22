@@ -1,4 +1,5 @@
 import pystray
+from pystray import Menu, MenuItem
 from PIL import Image, ImageDraw
 
 def create_image(width, height, color1, color2):
@@ -13,8 +14,4 @@ def create_image(width, height, color1, color2):
 
     return image
 
-
-icon = pystray.Icon(
-    'test name',
-    icon=create_image(64, 64, 'black', 'white')
-    )
+tray_icon = pystray.Icon('CustomRP', create_image(64, 64, 'black', 'white'))

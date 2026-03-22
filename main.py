@@ -1,8 +1,5 @@
 import gui, rpc_manager, process_monitor, tray_icon
-import time
-import threading
-import json
-import os
+import time, threading, json, os, pystray
 DEFAULT_CLIENT_ID = "1482109796915220491"
 running = False
 background_thread = None
@@ -30,6 +27,17 @@ def background_loop(data):
 
     rpc_manager.clear_presence()
 
+def show_window_from_tray(icon, item):
+    gui.app.after(0, gui.app.deiconify)
+
+def quit_from_tray(icon, item):
+    icon.stop()
+    gui.app.after(0, gui.app.destroy)
+
+tray_icon.tray_icon.menu = pystray.Menu(
+    pystray.MenuItem('Show App', show_window_from_tray),
+    pystray.MenuItem('Quit', quit_from_tray)
+)
 
 
 def on_start_clicked():
@@ -47,6 +55,9 @@ def on_stop_clicked():
     running = False
     print('Background thread stopped.')
 
+# Thread running while GUI is closed
+task_icon_thread = threading.Thread(target=tray_icon.tray_icon.run, daemon=True)
+task_icon_thread.start()
 
 gui.startButton.configure(command=on_start_clicked)
 gui.stopButton.configure(command=on_stop_clicked)

@@ -26,6 +26,9 @@ load_data()
 def get_data():
     return app_data
 
+def hide_window():
+    app.withdraw()
+
 def open_profiles_popup():
     popup = customtkinter.CTkToplevel(app)
     popup.geometry("400x300")
@@ -67,3 +70,4 @@ startButton.pack(pady=10)
 
 stopButton = customtkinter.CTkButton(app, text="Stop CustomRP")
 stopButton.pack(pady=10)
+app.protocol('WM_DELETE_WINDOW', hide_window)
