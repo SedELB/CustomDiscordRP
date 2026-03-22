@@ -1,3 +1,5 @@
 pypresence
 psutil
 customtkinter
+pystray
+Pillow
