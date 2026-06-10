@@ -1,11 +1,14 @@
 import customtkinter
 from tkinter import StringVar, filedialog, messagebox
 from PIL import Image, ImageDraw
+import io
 import os
+import threading
 import uuid
 import styles
 import image_picker
 import launcher_inject
+import window_fx
 
 MAX_FIELD = 128
 
@@ -33,9 +36,10 @@ class ProfileEditor(customtkinter.CTkToplevel):
             self.profile["id"] = str(uuid.uuid4())
 
         self.title("New Profile" if self.is_new else "Edit Profile")
-        self.geometry("480x720")
+        self.geometry("500x760")
         self.configure(fg_color=styles.BG_PRIMARY)
         self.attributes("-topmost", True)
+        window_fx.apply_chrome(self)
 
         self._font_header = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=styles.SIZE_HEADER, weight="bold")
         self._font_body = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=styles.SIZE_BODY)
@@ -44,6 +48,7 @@ class ProfileEditor(customtkinter.CTkToplevel):
         self._font_tiny = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=11)
         self._font_card_name = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=16, weight="bold")
         self._font_card_header = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=11, weight="bold")
+        self._font_section = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=11, weight="bold")
 
         self._elapsed_seconds = 0
         self._timer_id = None
@@ -69,12 +74,20 @@ class ProfileEditor(customtkinter.CTkToplevel):
         self.var_state = StringVar(value=p.get("state", ""))
         self.var_large_text = StringVar(value=p.get("large_image_text", ""))
         self.var_small_text = StringVar(value=p.get("small_image_text", ""))
+        self.var_large_key = StringVar(value=p.get("large_image_url") or p.get("large_image_key") or "")
+        self.var_small_key = StringVar(value=p.get("small_image_url") or p.get("small_image_key") or "")
         self.large_image_path = p.get("large_image_path", "")
+
+        self._url_preview_job = None
+        self.var_large_key.trace_add("write", lambda *_: self._schedule_url_preview())
 
     # --- layout --------------------------------------------------------------
     def _build_layout(self):
+        # Action bar pinned to the bottom; everything else scrolls above it.
+        self._build_actions(self)
+
         root = customtkinter.CTkScrollableFrame(self, fg_color=styles.BG_PRIMARY, corner_radius=0)
-        root.pack(fill="both", expand=True, padx=8, pady=8)
+        root.pack(fill="both", expand=True, padx=8, pady=(8, 0))
 
         customtkinter.CTkLabel(
             root,
@@ -93,7 +106,16 @@ class ProfileEditor(customtkinter.CTkToplevel):
 
         self._build_card(root)
         self._build_supporting_fields(root)
-        self._build_actions(root)
+
+    def _section(self, parent, title):
+        outer = customtkinter.CTkFrame(parent, fg_color=styles.BG_SECONDARY, corner_radius=10)
+        outer.pack(fill="x", padx=4, pady=(12, 0))
+        customtkinter.CTkLabel(
+            outer, text=title, font=self._font_section, text_color=styles.TEXT_MUTED, anchor="w"
+        ).pack(fill="x", padx=16, pady=(12, 0))
+        inner = customtkinter.CTkFrame(outer, fg_color="transparent")
+        inner.pack(fill="x", padx=12, pady=(0, 16))
+        return inner
 
     def _card_entry(self, parent, var, placeholder, font):
         # An entry styled to blend into the card so editing happens in-place.
@@ -183,11 +205,12 @@ class ProfileEditor(customtkinter.CTkToplevel):
         ).pack(fill="x", padx=4, pady=(2, 0))
 
     def _build_supporting_fields(self, parent):
-        self._label(parent, "Profile title")
-        self._entry(parent, self.var_title, "Label shown in your profile list")
+        app_section = self._section(parent, "APPLICATION")
+        self._label(app_section, "Profile title")
+        self._entry(app_section, self.var_title, "Label shown in your profile list")
 
-        self._label(parent, "Executable")
-        exe_row = customtkinter.CTkFrame(parent, fg_color="transparent")
+        self._label(app_section, "Executable")
+        exe_row = customtkinter.CTkFrame(app_section, fg_color="transparent")
         exe_row.pack(fill="x", padx=4)
         customtkinter.CTkEntry(
             exe_row,
@@ -213,10 +236,10 @@ class ProfileEditor(customtkinter.CTkToplevel):
             text_color=styles.TEXT_PRIMARY,
             command=self._pick_exe,
         ).pack(side="left", padx=(8, 0))
-        self._hint(parent, "Pick the .exe or type its name — the profile activates while it runs.")
+        self._hint(app_section, "Pick the .exe or type its name — the profile activates while it runs.")
 
         customtkinter.CTkButton(
-            parent,
+            app_section,
             text="Create .bat launcher",
             font=self._font_small,
             height=32,
@@ -225,21 +248,33 @@ class ProfileEditor(customtkinter.CTkToplevel):
             hover_color=styles.BORDER,
             text_color=styles.TEXT_PRIMARY,
             command=self._create_launcher,
-        ).pack(fill="x", padx=4, pady=(8, 0))
-        self._hint(parent, "Generates a .bat next to the .exe that activates this profile, then launches the app.")
+        ).pack(fill="x", padx=4, pady=(10, 0))
+        self._hint(app_section, "Generates a .bat next to the .exe that activates this profile, then launches the app.")
 
-        self._label(parent, "Discord App ID")
-        self._entry(parent, self.var_app_id, "123456789012345678")
-        self._hint(parent, "Create an app at discord.com/developers → copy its Application ID.")
+        discord_section = self._section(parent, "DISCORD")
+        self._label(discord_section, "Discord App ID")
+        self._entry(discord_section, self.var_app_id, "123456789012345678")
+        self._hint(discord_section, "Create an app at discord.com/developers → copy its Application ID.")
 
-        self._label(parent, "Large image tooltip")
-        self._entry(parent, self.var_large_text, "Hover text for the large image")
+        images_section = self._section(parent, "IMAGES")
+        self._label(images_section, "Large image — asset key or URL")
+        self._entry(images_section, self.var_large_key, "Asset name from the dev portal, or an https:// image URL")
+        self._hint(
+            images_section,
+            "This is what Discord actually displays. Upload an asset in your app's\n"
+            "Rich Presence → Art Assets and type its name, or paste a public image URL.",
+        )
 
-        self._label(parent, "Small image tooltip")
-        self._entry(parent, self.var_small_text, "Hover text for the small image")
+        self._label(images_section, "Large image tooltip")
+        self._entry(images_section, self.var_large_text, "Hover text for the large image")
 
-        toggles = customtkinter.CTkFrame(parent, fg_color="transparent")
-        toggles.pack(fill="x", padx=4, pady=(16, 4))
+        self._label(images_section, "Small image — asset key or URL")
+        self._entry(images_section, self.var_small_key, "Optional corner badge image")
+
+        self._label(images_section, "Small image tooltip")
+        self._entry(images_section, self.var_small_text, "Hover text for the small image")
+
+        toggles = self._section(parent, "BEHAVIOR")
         self.switch_elapsed = customtkinter.CTkSwitch(
             toggles,
             text="Show elapsed time",
@@ -264,30 +299,33 @@ class ProfileEditor(customtkinter.CTkToplevel):
             self.switch_enabled.select()
 
     def _build_actions(self, parent):
-        actions = customtkinter.CTkFrame(parent, fg_color="transparent")
-        actions.pack(fill="x", padx=4, pady=(20, 8))
+        bar = customtkinter.CTkFrame(parent, fg_color=styles.BG_SECONDARY, corner_radius=0, height=64)
+        bar.pack(side="bottom", fill="x")
+        bar.pack_propagate(False)
         customtkinter.CTkButton(
-            actions,
-            text="Cancel",
-            font=self._font_bold,
-            height=40,
-            corner_radius=styles.RADIUS_BUTTON,
-            fg_color=styles.BG_TERTIARY,
-            hover_color=styles.BORDER,
-            text_color=styles.TEXT_PRIMARY,
-            command=self._close,
-        ).pack(side="left", expand=True, fill="x", padx=(0, 5))
-        customtkinter.CTkButton(
-            actions,
+            bar,
             text="Save Profile",
             font=self._font_bold,
+            width=150,
             height=40,
             corner_radius=styles.RADIUS_BUTTON,
             fg_color=styles.ACCENT,
             hover_color=styles.ACCENT_HOVER,
             text_color=styles.TEXT_PRIMARY,
             command=self._save,
-        ).pack(side="left", expand=True, fill="x", padx=(5, 0))
+        ).pack(side="right", padx=(8, 16), pady=12)
+        customtkinter.CTkButton(
+            bar,
+            text="Cancel",
+            font=self._font_body,
+            width=90,
+            height=40,
+            corner_radius=styles.RADIUS_BUTTON,
+            fg_color="transparent",
+            hover_color=styles.BG_TERTIARY,
+            text_color=styles.TEXT_MUTED,
+            command=self._close,
+        ).pack(side="right", pady=12)
 
     # --- behaviour -----------------------------------------------------------
     def _open_image_picker(self):
@@ -354,6 +392,49 @@ class ProfileEditor(customtkinter.CTkToplevel):
         self._elapsed_seconds += 1
         self._timer_id = self.after(1000, self._tick)
 
+    @staticmethod
+    def _split_key_or_url(value):
+        # Discord accepts either a dev-portal asset key or a plain image URL.
+        value = value.strip()
+        if value.lower().startswith(("http://", "https://")):
+            return None, value
+        return (value or None), None
+
+    def _schedule_url_preview(self):
+        # Debounce so we only fetch once typing/pasting settles.
+        if self._url_preview_job is not None:
+            self.after_cancel(self._url_preview_job)
+        self._url_preview_job = self.after(700, self._fetch_url_preview)
+
+    def _fetch_url_preview(self):
+        self._url_preview_job = None
+        # A locally picked image owns the card thumbnail.
+        if self.large_image_path:
+            return
+        url = self.var_large_key.get().strip()
+        if not url.lower().startswith(("http://", "https://")):
+            return
+        threading.Thread(target=self._url_preview_worker, args=(url,), daemon=True).start()
+
+    def _url_preview_worker(self, url):
+        try:
+            import requests
+            res = requests.get(url, timeout=8)
+            img = Image.open(io.BytesIO(res.content)).convert("RGBA")
+        except Exception:
+            return
+        if not self.winfo_exists():
+            return
+        if url != self.var_large_key.get().strip():
+            return  # field changed while downloading
+        self.after(0, lambda: self._apply_url_preview(img))
+
+    def _apply_url_preview(self, img):
+        if not self.winfo_exists() or self.large_image_path:
+            return
+        self._image_ref = customtkinter.CTkImage(img, size=(72, 72))
+        self._img_button.configure(image=self._image_ref)
+
     def _normalize_exe(self, value):
         value = value.strip()
         if value and not value.lower().endswith(".exe"):
@@ -371,6 +452,8 @@ class ProfileEditor(customtkinter.CTkToplevel):
         p["state"] = self.var_state.get().strip()[:MAX_FIELD]
         p["large_image_text"] = self.var_large_text.get().strip()
         p["small_image_text"] = self.var_small_text.get().strip()
+        p["large_image_key"], p["large_image_url"] = self._split_key_or_url(self.var_large_key.get())
+        p["small_image_key"], p["small_image_url"] = self._split_key_or_url(self.var_small_key.get())
         p["large_image_path"] = self.large_image_path
         p["show_elapsed"] = bool(self.switch_elapsed.get())
         p["enabled"] = bool(self.switch_enabled.get())
@@ -382,4 +465,7 @@ class ProfileEditor(customtkinter.CTkToplevel):
         if self._timer_id is not None:
             self.after_cancel(self._timer_id)
             self._timer_id = None
+        if self._url_preview_job is not None:
+            self.after_cancel(self._url_preview_job)
+            self._url_preview_job = None
         self.destroy()

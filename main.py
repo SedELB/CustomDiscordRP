@@ -20,6 +20,14 @@ def _find_by_id(data, profile_id):
     return None
 
 
+def _report_status(title):
+    # Push live status into the sidebar from the monitor thread, safely.
+    try:
+        gui.app.after(0, lambda: gui.report_activity(title))
+    except Exception:
+        pass
+
+
 def background_loop():
     global running
     while running:
@@ -36,16 +44,20 @@ def background_loop():
 
         if profile:
             client_id = _client_id_for(profile, data)
+            title = profile.get('profileTitle', 'Active')
             if rpc_manager.ensure_connected(client_id):
                 st = start_time if profile.get('show_elapsed', True) else None
                 rpc_manager.update_from_profile(profile, st)
-                tray_icon.set_state('active', f"CustomRP — {profile.get('profileTitle', 'Active')}")
+                tray_icon.set_state('active', f"CustomRP — {title}")
+                _report_status(title)
             else:
                 tray_icon.set_state('error', "Discord not detected")
+                _report_status(None)
         else:
             if rpc_manager.is_connected():
                 rpc_manager.clear_presence()
             tray_icon.set_state('idle', "CustomRP — idle")
+            _report_status(None)
 
         time.sleep(POLL_SECONDS)
 
@@ -88,12 +100,12 @@ tray_icon.tray_icon.menu = pystray.Menu(
 )
 
 
-def on_start_clicked():
-    start_monitoring()
-
-
-def on_stop_clicked():
-    stop_monitoring()
+def toggle_power():
+    if running:
+        stop_monitoring()
+    else:
+        start_monitoring()
+    gui.update_power_visual(running)
 
 
 def _parse_args():
@@ -112,11 +124,11 @@ if args.profile:
 task_icon_thread = threading.Thread(target=tray_icon.tray_icon.run, daemon=True)
 task_icon_thread.start()
 
-gui.startButton.configure(command=on_start_clicked)
-gui.stopButton.configure(command=on_stop_clicked)
+gui.power_button.configure(command=toggle_power)
 
 # A .bat launcher passes --launch to activate immediately without clicking Start.
 if args.launch:
     start_monitoring()
+    gui.update_power_visual(True)
 
 gui.app.mainloop()

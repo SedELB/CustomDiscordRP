@@ -3,6 +3,7 @@ from tkinter import filedialog
 from PIL import Image
 import os
 import styles
+import window_fx
 
 # NOTE: Online search is intentionally disabled for now (DuckDuckGo/Bing scraping
 # is being bot-blocked). The backend lives in image_search.py and can be re-enabled
@@ -56,6 +57,7 @@ class ImagePicker(customtkinter.CTkToplevel):
         self.geometry("460x480")
         self.configure(fg_color=styles.BG_PRIMARY)
         self.attributes("-topmost", True)
+        window_fx.apply_chrome(self)
 
         self._font_body = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=styles.SIZE_BODY)
         self._font_bold = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=styles.SIZE_BODY, weight="bold")
