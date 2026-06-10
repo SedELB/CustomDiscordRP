@@ -4,19 +4,20 @@ from PIL import Image, ImageDraw
 import os
 import uuid
 import styles
+import image_picker
 
 MAX_FIELD = 128
 
 
-def _placeholder_image(size=60):
+def _placeholder_image(size=72):
     # Grey rounded square with a simple camera glyph, used when no image is set.
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     dc = ImageDraw.Draw(img)
-    dc.rounded_rectangle((0, 0, size - 1, size - 1), radius=8, fill="#1e1f22")
+    dc.rounded_rectangle((0, 0, size - 1, size - 1), radius=10, fill="#1e1f22")
     body_top = size * 0.38
-    dc.rounded_rectangle((size * 0.18, body_top, size * 0.82, size * 0.78), radius=4, fill="#4e5058")
+    dc.rounded_rectangle((size * 0.18, body_top, size * 0.82, size * 0.78), radius=5, fill="#4e5058")
     dc.rectangle((size * 0.40, body_top - size * 0.08, size * 0.60, body_top), fill="#4e5058")
-    dc.ellipse((size * 0.40, size * 0.46, size * 0.60, size * 0.66), fill="#1e1f22")
+    dc.ellipse((size * 0.40, size * 0.46, size * 0.62, size * 0.68), fill="#1e1f22")
     return img
 
 
@@ -26,9 +27,12 @@ class ProfileEditor(customtkinter.CTkToplevel):
         self.on_save = on_save
         self.is_new = profile is None
         self.profile = {} if profile is None else profile
+        # Need an id up front so the image picker can save assets/profile_images/<id>.png
+        if "id" not in self.profile:
+            self.profile["id"] = str(uuid.uuid4())
 
         self.title("New Profile" if self.is_new else "Edit Profile")
-        self.geometry("880x640")
+        self.geometry("480x720")
         self.configure(fg_color=styles.BG_PRIMARY)
         self.attributes("-topmost", True)
 
@@ -38,14 +42,16 @@ class ProfileEditor(customtkinter.CTkToplevel):
         self._font_small = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=styles.SIZE_SMALL)
         self._font_tiny = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=11)
         self._font_card_name = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=16, weight="bold")
+        self._font_card_header = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=11, weight="bold")
 
         self._elapsed_seconds = 0
         self._timer_id = None
-        self._placeholder = customtkinter.CTkImage(_placeholder_image(60), size=(60, 60))
+        self._placeholder = customtkinter.CTkImage(_placeholder_image(72), size=(72, 72))
+        self._image_ref = None
 
         self._build_vars()
         self._build_layout()
-        self._render_preview()
+        self._refresh_image()
         self._tick()
 
         self.protocol("WM_DELETE_WINDOW", self._close)
@@ -62,24 +68,94 @@ class ProfileEditor(customtkinter.CTkToplevel):
         self.var_state = StringVar(value=p.get("state", ""))
         self.var_large_text = StringVar(value=p.get("large_image_text", ""))
         self.var_small_text = StringVar(value=p.get("small_image_text", ""))
-
-        for var in (self.var_name, self.var_details, self.var_state):
-            var.trace_add("write", lambda *_: self._render_preview())
+        self.large_image_path = p.get("large_image_path", "")
 
     # --- layout --------------------------------------------------------------
     def _build_layout(self):
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=0)
-        self.grid_rowconfigure(0, weight=1)
+        root = customtkinter.CTkScrollableFrame(self, fg_color=styles.BG_PRIMARY, corner_radius=0)
+        root.pack(fill="both", expand=True, padx=8, pady=8)
 
-        left = customtkinter.CTkScrollableFrame(self, fg_color=styles.BG_PRIMARY, corner_radius=0)
-        left.grid(row=0, column=0, sticky="nsew", padx=(8, 4), pady=8)
-        self._build_form(left)
+        customtkinter.CTkLabel(
+            root,
+            text="New Profile" if self.is_new else "Edit Profile",
+            font=self._font_header,
+            text_color=styles.TEXT_PRIMARY,
+            anchor="w",
+        ).pack(fill="x", padx=4, pady=(4, 2))
+        customtkinter.CTkLabel(
+            root,
+            text="Edit the card below — it's exactly what Discord will show.",
+            font=self._font_tiny,
+            text_color=styles.TEXT_MUTED,
+            anchor="w",
+        ).pack(fill="x", padx=4, pady=(0, 10))
 
-        right = customtkinter.CTkFrame(self, fg_color=styles.BG_PRIMARY, width=380)
-        right.grid(row=0, column=1, sticky="nsew", padx=(4, 12), pady=8)
-        right.grid_propagate(False)
-        self._build_preview(right)
+        self._build_card(root)
+        self._build_supporting_fields(root)
+        self._build_actions(root)
+
+    def _card_entry(self, parent, var, placeholder, font):
+        # An entry styled to blend into the card so editing happens in-place.
+        return customtkinter.CTkEntry(
+            parent,
+            textvariable=var,
+            placeholder_text=placeholder,
+            font=font,
+            height=30,
+            corner_radius=4,
+            fg_color=styles.CARD_BG,
+            border_color=styles.CARD_BG,
+            border_width=1,
+            text_color=styles.TEXT_PRIMARY,
+        )
+
+    def _build_card(self, parent):
+        card = customtkinter.CTkFrame(parent, fg_color=styles.CARD_BG, corner_radius=styles.RADIUS_CARD)
+        card.pack(fill="x", padx=4, pady=(0, 4))
+
+        customtkinter.CTkLabel(
+            card, text="PLAYING A GAME", font=self._font_card_header, text_color=styles.TEXT_MUTED, anchor="w"
+        ).pack(fill="x", padx=16, pady=(16, 8))
+
+        body = customtkinter.CTkFrame(card, fg_color="transparent")
+        body.pack(fill="x", padx=16, pady=(0, 16))
+
+        self._img_button = customtkinter.CTkButton(
+            body,
+            text="",
+            image=self._placeholder,
+            width=72,
+            height=72,
+            fg_color=styles.CARD_BG,
+            hover_color=styles.CARD_HOVER,
+            corner_radius=10,
+            command=self._open_image_picker,
+        )
+        self._img_button.pack(side="left", anchor="n")
+
+        text_col = customtkinter.CTkFrame(body, fg_color="transparent")
+        text_col.pack(side="left", fill="x", expand=True, padx=(14, 0))
+
+        self._card_entry(text_col, self.var_name, "Application name", self._font_card_name).pack(fill="x")
+        self._card_entry(text_col, self.var_details, "Details line", self._font_small).pack(fill="x", pady=(2, 0))
+        self._card_entry(text_col, self.var_state, "State line", self._font_small).pack(fill="x", pady=(2, 0))
+        self._lbl_elapsed = customtkinter.CTkLabel(
+            text_col, text="", font=self._font_small, text_color=styles.TEXT_MUTED, anchor="w"
+        )
+        self._lbl_elapsed.pack(fill="x", padx=4, pady=(4, 0))
+
+        status = customtkinter.CTkFrame(parent, fg_color="transparent")
+        status.pack(fill="x", padx=8, pady=(2, 12))
+        customtkinter.CTkLabel(status, text="●", font=self._font_small, text_color=styles.SUCCESS).pack(side="left")
+        customtkinter.CTkLabel(
+            status, text="Online", font=self._font_small, text_color=styles.TEXT_MUTED
+        ).pack(side="left", padx=(6, 0))
+        customtkinter.CTkLabel(
+            status,
+            text="Click the image to search or upload one.",
+            font=self._font_tiny,
+            text_color=styles.TEXT_MUTED,
+        ).pack(side="right")
 
     def _label(self, parent, text):
         customtkinter.CTkLabel(
@@ -87,7 +163,7 @@ class ProfileEditor(customtkinter.CTkToplevel):
         ).pack(fill="x", padx=4, pady=(14, 2))
 
     def _entry(self, parent, var, placeholder):
-        entry = customtkinter.CTkEntry(
+        customtkinter.CTkEntry(
             parent,
             textvariable=var,
             placeholder_text=placeholder,
@@ -98,31 +174,21 @@ class ProfileEditor(customtkinter.CTkToplevel):
             border_color=styles.BORDER,
             border_width=1,
             text_color=styles.TEXT_PRIMARY,
-        )
-        entry.pack(fill="x", padx=4)
-        return entry
+        ).pack(fill="x", padx=4)
 
     def _hint(self, parent, text):
         customtkinter.CTkLabel(
             parent, text=text, font=self._font_tiny, text_color=styles.TEXT_MUTED, anchor="w", justify="left"
         ).pack(fill="x", padx=4, pady=(2, 0))
 
-    def _build_form(self, parent):
-        customtkinter.CTkLabel(
-            parent,
-            text="New Profile" if self.is_new else "Edit Profile",
-            font=self._font_header,
-            text_color=styles.TEXT_PRIMARY,
-            anchor="w",
-        ).pack(fill="x", padx=4, pady=(4, 8))
-
+    def _build_supporting_fields(self, parent):
         self._label(parent, "Profile title")
-        self._entry(parent, self.var_title, "e.g. SolidWorks 2024")
+        self._entry(parent, self.var_title, "Label shown in your profile list")
 
         self._label(parent, "Executable")
         exe_row = customtkinter.CTkFrame(parent, fg_color="transparent")
         exe_row.pack(fill="x", padx=4)
-        exe_entry = customtkinter.CTkEntry(
+        customtkinter.CTkEntry(
             exe_row,
             textvariable=self.var_exe,
             placeholder_text="SLDWORKS.exe",
@@ -133,8 +199,7 @@ class ProfileEditor(customtkinter.CTkToplevel):
             border_color=styles.BORDER,
             border_width=1,
             text_color=styles.TEXT_PRIMARY,
-        )
-        exe_entry.pack(side="left", fill="x", expand=True)
+        ).pack(side="left", fill="x", expand=True)
         customtkinter.CTkButton(
             exe_row,
             text="Browse",
@@ -153,15 +218,6 @@ class ProfileEditor(customtkinter.CTkToplevel):
         self._entry(parent, self.var_app_id, "123456789012345678")
         self._hint(parent, "Create an app at discord.com/developers → copy its Application ID.")
 
-        self._label(parent, "Application name")
-        self._entry(parent, self.var_name, "Shown bold in Discord")
-
-        self._label(parent, "Details")
-        self._entry(parent, self.var_details, "Top line, max 128 chars")
-
-        self._label(parent, "State")
-        self._entry(parent, self.var_state, "Bottom line, max 128 chars")
-
         self._label(parent, "Large image tooltip")
         self._entry(parent, self.var_large_text, "Hover text for the large image")
 
@@ -170,14 +226,13 @@ class ProfileEditor(customtkinter.CTkToplevel):
 
         toggles = customtkinter.CTkFrame(parent, fg_color="transparent")
         toggles.pack(fill="x", padx=4, pady=(16, 4))
-
         self.switch_elapsed = customtkinter.CTkSwitch(
             toggles,
             text="Show elapsed time",
             font=self._font_body,
             text_color=styles.TEXT_PRIMARY,
             progress_color=styles.ACCENT,
-            command=self._render_preview,
+            command=self._refresh_elapsed_visibility,
         )
         self.switch_elapsed.pack(anchor="w", pady=4)
         if self.profile.get("show_elapsed", True):
@@ -194,6 +249,7 @@ class ProfileEditor(customtkinter.CTkToplevel):
         if self.profile.get("enabled", True):
             self.switch_enabled.select()
 
+    def _build_actions(self, parent):
         actions = customtkinter.CTkFrame(parent, fg_color="transparent")
         actions.pack(fill="x", padx=4, pady=(20, 8))
         customtkinter.CTkButton(
@@ -219,58 +275,28 @@ class ProfileEditor(customtkinter.CTkToplevel):
             command=self._save,
         ).pack(side="left", expand=True, fill="x", padx=(5, 0))
 
-    def _build_preview(self, parent):
-        customtkinter.CTkLabel(
-            parent, text="Live preview", font=self._font_bold, text_color=styles.TEXT_MUTED, anchor="w"
-        ).pack(fill="x", padx=4, pady=(4, 8))
-
-        card = customtkinter.CTkFrame(parent, fg_color=styles.CARD_BG, corner_radius=styles.RADIUS_CARD)
-        card.pack(fill="x", padx=4)
-
-        # "PLAYING A GAME" header
-        customtkinter.CTkLabel(
-            card,
-            text="PLAYING A GAME",
-            font=customtkinter.CTkFont(family=styles.FONT_FAMILY, size=11, weight="bold"),
-            text_color=styles.TEXT_MUTED,
-            anchor="w",
-        ).pack(fill="x", padx=16, pady=(16, 8))
-
-        body = customtkinter.CTkFrame(card, fg_color="transparent")
-        body.pack(fill="x", padx=16, pady=(0, 16))
-
-        self._img_label = customtkinter.CTkLabel(body, text="", image=self._placeholder, width=60, height=60)
-        self._img_label.pack(side="left", anchor="n")
-
-        text_col = customtkinter.CTkFrame(body, fg_color="transparent")
-        text_col.pack(side="left", fill="x", expand=True, padx=(14, 0))
-
-        self._lbl_name = customtkinter.CTkLabel(
-            text_col, text="", font=self._font_card_name, text_color=styles.TEXT_PRIMARY, anchor="w", justify="left"
-        )
-        self._lbl_name.pack(fill="x")
-        self._lbl_details = customtkinter.CTkLabel(
-            text_col, text="", font=self._font_small, text_color=styles.TEXT_PRIMARY, anchor="w", justify="left"
-        )
-        self._lbl_details.pack(fill="x")
-        self._lbl_state = customtkinter.CTkLabel(
-            text_col, text="", font=self._font_small, text_color=styles.TEXT_PRIMARY, anchor="w", justify="left"
-        )
-        self._lbl_state.pack(fill="x")
-        self._lbl_elapsed = customtkinter.CTkLabel(
-            text_col, text="", font=self._font_small, text_color=styles.TEXT_MUTED, anchor="w", justify="left"
-        )
-        self._lbl_elapsed.pack(fill="x", pady=(2, 0))
-
-        # Online status row
-        status = customtkinter.CTkFrame(parent, fg_color="transparent")
-        status.pack(fill="x", padx=4, pady=(12, 0))
-        customtkinter.CTkLabel(status, text="●", font=self._font_small, text_color=styles.SUCCESS).pack(side="left")
-        customtkinter.CTkLabel(
-            status, text="Online", font=self._font_small, text_color=styles.TEXT_MUTED
-        ).pack(side="left", padx=(6, 0))
-
     # --- behaviour -----------------------------------------------------------
+    def _open_image_picker(self):
+        default_query = (self.var_name.get() or self.var_title.get() or "logo").strip() + " logo"
+        image_picker.ImagePicker(self, self.profile["id"], default_query, self._on_image_picked)
+
+    def _on_image_picked(self, path):
+        self.large_image_path = path
+        self._refresh_image()
+        self.lift()
+        self.attributes("-topmost", True)
+
+    def _refresh_image(self):
+        if self.large_image_path and os.path.exists(self.large_image_path):
+            try:
+                img = Image.open(self.large_image_path).convert("RGBA")
+                self._image_ref = customtkinter.CTkImage(img, size=(72, 72))
+                self._img_button.configure(image=self._image_ref)
+                return
+            except Exception:
+                pass
+        self._img_button.configure(image=self._placeholder)
+
     def _pick_exe(self):
         path = filedialog.askopenfilename(
             title="Select executable", filetypes=[("Executables", "*.exe"), ("All files", "*.*")]
@@ -282,12 +308,9 @@ class ProfileEditor(customtkinter.CTkToplevel):
         self.lift()
         self.attributes("-topmost", True)
 
-    def _render_preview(self):
-        self._lbl_name.configure(text=self.var_name.get() or "Application name")
-        self._lbl_details.configure(text=self.var_details.get())
-        self._lbl_state.configure(text=self.var_state.get())
+    def _refresh_elapsed_visibility(self):
         if self.switch_elapsed.get():
-            self._lbl_elapsed.pack(fill="x", pady=(2, 0))
+            self._lbl_elapsed.pack(fill="x", padx=4, pady=(4, 0))
         else:
             self._lbl_elapsed.pack_forget()
 
@@ -307,8 +330,6 @@ class ProfileEditor(customtkinter.CTkToplevel):
 
     def _save(self):
         p = self.profile
-        if "id" not in p:
-            p["id"] = str(uuid.uuid4())
         p["profileTitle"] = self.var_title.get().strip() or "Untitled"
         p["targetExe"] = self._normalize_exe(self.var_exe.get())
         p["exe_path"] = self.var_exe_path.get().strip()
@@ -318,6 +339,7 @@ class ProfileEditor(customtkinter.CTkToplevel):
         p["state"] = self.var_state.get().strip()[:MAX_FIELD]
         p["large_image_text"] = self.var_large_text.get().strip()
         p["small_image_text"] = self.var_small_text.get().strip()
+        p["large_image_path"] = self.large_image_path
         p["show_elapsed"] = bool(self.switch_elapsed.get())
         p["enabled"] = bool(self.switch_enabled.get())
 
