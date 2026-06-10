@@ -1,10 +1,11 @@
 import customtkinter
-from tkinter import StringVar, filedialog
+from tkinter import StringVar, filedialog, messagebox
 from PIL import Image, ImageDraw
 import os
 import uuid
 import styles
 import image_picker
+import launcher_inject
 
 MAX_FIELD = 128
 
@@ -214,6 +215,19 @@ class ProfileEditor(customtkinter.CTkToplevel):
         ).pack(side="left", padx=(8, 0))
         self._hint(parent, "Pick the .exe or type its name — the profile activates while it runs.")
 
+        customtkinter.CTkButton(
+            parent,
+            text="Create .bat launcher",
+            font=self._font_small,
+            height=32,
+            corner_radius=styles.RADIUS_BUTTON,
+            fg_color=styles.BG_TERTIARY,
+            hover_color=styles.BORDER,
+            text_color=styles.TEXT_PRIMARY,
+            command=self._create_launcher,
+        ).pack(fill="x", padx=4, pady=(8, 0))
+        self._hint(parent, "Generates a .bat next to the .exe that activates this profile, then launches the app.")
+
         self._label(parent, "Discord App ID")
         self._entry(parent, self.var_app_id, "123456789012345678")
         self._hint(parent, "Create an app at discord.com/developers → copy its Application ID.")
@@ -296,6 +310,24 @@ class ProfileEditor(customtkinter.CTkToplevel):
             except Exception:
                 pass
         self._img_button.configure(image=self._placeholder)
+
+    def _create_launcher(self):
+        profile = {
+            "id": self.profile["id"],
+            "exe_path": self.var_exe_path.get().strip(),
+        }
+        bat_path, error = launcher_inject.make_bat_launcher(profile)
+        if error:
+            messagebox.showerror("Launcher", error, parent=self)
+            return
+        messagebox.showinfo(
+            "Launcher created",
+            f"Created:\n{bat_path}\n\nRun this .bat instead of the .exe directly, "
+            "or pin it to your taskbar.",
+            parent=self,
+        )
+        self.lift()
+        self.attributes("-topmost", True)
 
     def _pick_exe(self):
         path = filedialog.askopenfilename(
