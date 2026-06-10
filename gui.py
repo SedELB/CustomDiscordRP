@@ -2,6 +2,7 @@ import customtkinter
 import json
 import os
 import styles
+import profile_editor
 
 customtkinter.set_appearance_mode("Dark")
 
@@ -41,80 +42,15 @@ def hide_window():
     app.withdraw()
 
 
-# Styled input helpers — keep the create-profile form consistent with the theme.
-def add_field_label(parent, text):
-    label = customtkinter.CTkLabel(parent, text=text, font=FONT_BOLD, text_color=styles.TEXT_PRIMARY, anchor="w")
-    label.pack(fill="x", padx=24, pady=(14, 2))
-    return label
+def on_editor_save(profile, is_new):
+    if is_new:
+        app_data["profiles"].append(profile)
+    save_data()
+    print(f"Profile saved! Target: {profile.get('targetExe', '')}")
+    refresh_profile_list()
 
-def add_field_entry(parent, placeholder):
-    entry = customtkinter.CTkEntry(
-        parent,
-        placeholder_text=placeholder,
-        font=FONT_BODY,
-        height=36,
-        corner_radius=styles.RADIUS_INPUT,
-        fg_color=styles.BG_TERTIARY,
-        border_color=styles.BORDER,
-        border_width=1,
-        text_color=styles.TEXT_PRIMARY,
-    )
-    entry.pack(fill="x", padx=24)
-    return entry
-
-
-def open_profiles_popup():
-    popup = customtkinter.CTkToplevel(app)
-    popup.geometry("420x560")
-    popup.title("New Profile")
-    popup.configure(fg_color=styles.BG_PRIMARY)
-    popup.attributes("-topmost", True)
-
-    customtkinter.CTkLabel(
-        popup, text="Create Profile", font=FONT_HEADER, text_color=styles.TEXT_PRIMARY, anchor="w"
-    ).pack(fill="x", padx=24, pady=(20, 4))
-
-    add_field_label(popup, "Profile Title")
-    profileNameEntry = add_field_entry(popup, 'Profile Title')
-
-    add_field_label(popup, "Executable name")
-    targetExeEntry = add_field_entry(popup, 'Target .exe')
-
-    add_field_label(popup, "Name of the application")
-    statusNameEntry = add_field_entry(popup, 'e.g. Playing X')
-
-    add_field_label(popup, "Details")
-    detailsEntry = add_field_entry(popup, 'e.g. Working on a file')
-
-    def save_new_profile():
-        new_profile = {
-            "profileTitle": profileNameEntry.get(),
-            "targetExe": targetExeEntry.get(),
-            "statusName": statusNameEntry.get(),
-            "details": detailsEntry.get()
-        }
-
-        if ".exe" not in new_profile["targetExe"]:
-            new_profile["targetExe"] = new_profile["targetExe"] + ".exe"
-
-        app_data["profiles"].append(new_profile)
-        save_data()
-        print(f"Profile saved! Target: {new_profile['targetExe']}")
-        refresh_profile_list()
-        popup.destroy()
-
-    save_btn = customtkinter.CTkButton(
-        popup,
-        text="Save Profile",
-        command=save_new_profile,
-        font=FONT_BOLD,
-        height=40,
-        corner_radius=styles.RADIUS_BUTTON,
-        fg_color=styles.ACCENT,
-        hover_color=styles.ACCENT_HOVER,
-        text_color=styles.TEXT_PRIMARY,
-    )
-    save_btn.pack(fill="x", padx=24, pady=24, side="bottom")
+def open_editor(profile=None):
+    profile_editor.ProfileEditor(app, profile, on_editor_save)
 
 
 # Header
@@ -193,10 +129,32 @@ def refresh_profile_list():
             font=FONT_SMALL,
             text_color=styles.TEXT_MUTED,
             anchor="w",
-        ).pack(fill="x", padx=16, pady=(0, 8))
+        ).pack(fill="x", padx=16, pady=(0, 2))
+        if profile.get('state'):
+            customtkinter.CTkLabel(
+                details_frame,
+                text=f"State:  {profile['state']}",
+                font=FONT_SMALL,
+                text_color=styles.TEXT_MUTED,
+                anchor="w",
+            ).pack(fill="x", padx=16, pady=(0, 6))
+
+        button_row = customtkinter.CTkFrame(details_frame, fg_color="transparent")
+        button_row.pack(fill="x", padx=16, pady=(2, 12))
         customtkinter.CTkButton(
-            details_frame,
-            text="Delete profile",
+            button_row,
+            text="Edit",
+            command=lambda p=profile: open_editor(p),
+            font=FONT_SMALL,
+            height=32,
+            corner_radius=styles.RADIUS_BUTTON,
+            fg_color=styles.ACCENT,
+            hover_color=styles.ACCENT_HOVER,
+            text_color=styles.TEXT_PRIMARY,
+        ).pack(side="left", expand=True, fill="x", padx=(0, 5))
+        customtkinter.CTkButton(
+            button_row,
+            text="Delete",
             command=lambda p=profile: delete_profile(p),
             font=FONT_SMALL,
             height=32,
@@ -204,7 +162,7 @@ def refresh_profile_list():
             fg_color=styles.DANGER,
             hover_color=styles.DANGER_HOVER,
             text_color=styles.TEXT_PRIMARY,
-        ).pack(fill="x", padx=16, pady=(0, 12))
+        ).pack(side="left", expand=True, fill="x", padx=(5, 0))
 
         def delete_profile(profile):
             app_data["profiles"].remove(profile)
@@ -231,7 +189,7 @@ bottom_frame.pack(pady=(0, 20), padx=16, fill="x")
 createProfileButton = customtkinter.CTkButton(
     bottom_frame,
     text="Create Profile",
-    command=open_profiles_popup,
+    command=open_editor,
     font=FONT_BOLD,
     height=40,
     corner_radius=styles.RADIUS_BUTTON,
