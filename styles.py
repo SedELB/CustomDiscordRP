@@ -164,6 +164,31 @@ QMenu::separator {{ height: 1px; background: {BORDER}; margin: 5px 8px; }}
 
 QMessageBox {{ background: {BG_PRIMARY}; }}
 
+QTabWidget::pane {{ border: none; }}
+QTabBar::tab {{
+    background: transparent;
+    color: {TEXT_MUTED};
+    padding: 8px 18px;
+    margin-right: 4px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-weight: 600;
+}}
+QTabBar::tab:selected {{
+    color: {TEXT_PRIMARY};
+    border-bottom: 2px solid {ACCENT};
+}}
+QTabBar::tab:hover {{ color: {TEXT_PRIMARY}; }}
+
+QPushButton[kind="thumb"] {{
+    background: {BG_TERTIARY};
+    border: 2px solid {BG_TERTIARY};
+    border-radius: 8px;
+    padding: 0;
+}}
+QPushButton[kind="thumb"]:hover {{ border: 2px solid {BORDER}; }}
+QPushButton[kind="thumb"]:checked {{ border: 2px solid {ACCENT}; }}
+
 /* Named containers */
 #sidebar {{ background: {BG_SECONDARY}; }}
 #panel {{ background: {BG_SECONDARY}; border-radius: 8px; }}

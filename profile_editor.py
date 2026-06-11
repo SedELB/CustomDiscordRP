@@ -1,8 +1,8 @@
+import io
 import os
-import threading
 import uuid
 from PIL import Image
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QCursor, QPainter, QColor, QBrush
 from PyQt6.QtWidgets import (
     QDialog, QWidget, QFrame, QLabel, QPushButton, QLineEdit, QFileDialog,
@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
 )
 import styles
 import qt_utils
+import qt_net
 import image_picker
 import launcher_inject
 
@@ -105,10 +106,9 @@ class _AvatarDot(QWidget):
 
 
 class ProfileEditor(QDialog):
-    url_image_ready = pyqtSignal(bytes)
-
     def __init__(self, parent, profile, on_save):
         super().__init__(parent)
+        self._net = qt_net.Net(self)
         self.on_save = on_save
         self.is_new = profile is None
         self.profile = {} if profile is None else profile
@@ -129,13 +129,12 @@ class ProfileEditor(QDialog):
 
         self._build_ui()
         self._refresh_card_image()
+        self._update_image_status()
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._timer.start(1000)
         self._tick()
-
-        self.url_image_ready.connect(self._on_url_image)
 
     # --- ui ------------------------------------------------------------------
     def _build_ui(self):
@@ -230,6 +229,11 @@ class ProfileEditor(QDialog):
         act_lay.addLayout(act_row)
 
         content.addWidget(activity)
+
+        self._img_status = _label("", size=8)
+        self._img_status.setContentsMargins(2, 6, 0, 0)
+        content.addWidget(self._img_status)
+
         lay.addLayout(content)
         return card
 
@@ -301,10 +305,11 @@ class ProfileEditor(QDialog):
             self.profile.get("large_image_url") or self.profile.get("large_image_key") or "",
         )
         self.edit_large_key.textChanged.connect(self._schedule_url_preview)
+        self.edit_large_key.textChanged.connect(self._update_image_status)
         lay.addWidget(self.edit_large_key)
         lay.addWidget(_hint(
-            "This is what Discord actually displays. Upload an asset in your app's "
-            "Rich Presence → Art Assets and type its name, or paste a public image URL."
+            "This is what Discord actually displays. Click the card image to search a logo "
+            "or upload one (auto-hosted), or paste an asset key / public image URL here."
         ))
 
         lay.addWidget(_label("Large image tooltip", size=9, bold=True))
@@ -374,13 +379,30 @@ class ProfileEditor(QDialog):
         self.lbl_elapsed.setVisible(checked)
 
     def _open_image_picker(self):
-        default_query = (self.edit_name.text() or self.edit_title.text() or "logo").strip() + " logo"
+        # Brandfetch matches brand names, so search the app name itself.
+        default_query = (self.edit_name.text() or self.edit_title.text() or "").strip()
         picker = image_picker.ImagePicker(self, self.profile["id"], default_query, self._on_image_picked)
         picker.exec()
 
-    def _on_image_picked(self, path):
-        self.large_image_path = path
+    def _on_image_picked(self, path, url):
+        if path:
+            self.large_image_path = path
+        if url:
+            # Auto-fill the field so the image actually renders in Discord.
+            self.edit_large_key.setText(url)
         self._refresh_card_image()
+        self._update_image_status()
+
+    def _update_image_status(self):
+        value = self.edit_large_key.text().strip()
+        if value:
+            self._img_status.setText("✓  This image will show in Discord")
+            self._img_status.setStyleSheet(f"color: {styles.SUCCESS};")
+        elif self.large_image_path:
+            self._img_status.setText("⚠  Preview only — choose/search an image or paste a URL so Discord shows it")
+            self._img_status.setStyleSheet(f"color: {styles.TEXT_MUTED};")
+        else:
+            self._img_status.setText("")
 
     def _refresh_card_image(self):
         if self.large_image_path and os.path.exists(self.large_image_path):
@@ -427,22 +449,13 @@ class ProfileEditor(QDialog):
         url = self.edit_large_key.text().strip()
         if not url.lower().startswith(("http://", "https://")):
             return
-        threading.Thread(target=self._url_worker, args=(url,), daemon=True).start()
+        self._net.get(url, self._on_url_bytes)
 
-    def _url_worker(self, url):
-        try:
-            import requests
-            res = requests.get(url, timeout=8)
-            if res.status_code == 200:
-                self.url_image_ready.emit(res.content)
-        except Exception:
-            pass
-
-    def _on_url_image(self, data):
-        if self.large_image_path:
+    def _on_url_bytes(self, data):
+        # Runs on the main thread (Qt async). Decode + paint here.
+        if data is None or self.large_image_path:
             return
         try:
-            import io
             pil = Image.open(io.BytesIO(data)).convert("RGBA")
         except Exception:
             return
