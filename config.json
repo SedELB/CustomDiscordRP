@@ -1,4 +1,24 @@
 {
     "clientId": "1482109796915220491",
-    "profiles": []
+    "profiles": [
+        {
+            "id": "8df5c322-dd61-4b63-bde8-a7244d7c214d",
+            "profileTitle": "Untitled",
+            "targetExe": "Medal.exe",
+            "exe_path": "C:/Users/rkiae/AppData/Local/Medal/app-4.3253.0/Medal.exe",
+            "discord_app_id": "1482109796915220491",
+            "statusName": "Doing Tests",
+            "details": "application testing...",
+            "state": "more details...",
+            "large_image_text": "",
+            "small_image_text": "",
+            "large_image_key": null,
+            "large_image_url": null,
+            "small_image_key": null,
+            "small_image_url": null,
+            "large_image_path": "assets\\profile_images\\8df5c322-dd61-4b63-bde8-a7244d7c214d.png",
+            "show_elapsed": true,
+            "enabled": true
+        }
+    ]
 }

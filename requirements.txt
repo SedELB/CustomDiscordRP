@@ -1,6 +1,5 @@
 pypresence
 psutil
-customtkinter
-pystray
+PyQt6
 Pillow
 requests

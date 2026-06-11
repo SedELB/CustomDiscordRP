@@ -1,29 +1,16 @@
-import customtkinter
-from tkinter import filedialog
-from PIL import Image
 import os
+from PIL import Image
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QDialog, QFrame, QLabel, QPushButton, QFileDialog, QVBoxLayout, QHBoxLayout,
+)
 import styles
-import window_fx
+import qt_utils
 
-# NOTE: Online search is intentionally disabled for now (DuckDuckGo/Bing scraping
-# is being bot-blocked). The backend lives in image_search.py and can be re-enabled
-# later by wiring a grid into the "Search online" tab. Upload is the active path.
+# NOTE: Online search is intentionally disabled for now (free providers are
+# bot-blocking scrapers). The backend lives in image_search.py for later.
 
-THUMB = 84
 IMAGES_DIR = os.path.join("assets", "profile_images")
-
-
-def _checkerboard(size, square=8):
-    # Light/dark checker so PNG transparency is visible behind a thumbnail.
-    img = Image.new("RGBA", (size, size), (255, 255, 255, 255))
-    dark = (200, 200, 200, 255)
-    for y in range(0, size, square):
-        for x in range(0, size, square):
-            if (x // square + y // square) % 2 == 0:
-                for yy in range(y, min(y + square, size)):
-                    for xx in range(x, min(x + square, size)):
-                        img.putpixel((xx, yy), dark)
-    return img
 
 
 def square_crop(img, size=512):
@@ -35,93 +22,83 @@ def square_crop(img, size=512):
     return img.crop((left, top, left + m, top + m)).resize((size, size), Image.LANCZOS)
 
 
-def _thumb_image(img, box=THUMB):
-    base = _checkerboard(box).copy()
-    fitted = img.convert("RGBA").copy()
-    fitted.thumbnail((box, box), Image.LANCZOS)
-    ox = (box - fitted.width) // 2
-    oy = (box - fitted.height) // 2
-    base.alpha_composite(fitted, (ox, oy))
-    return base
-
-
-class ImagePicker(customtkinter.CTkToplevel):
-    def __init__(self, master, profile_id, default_query, on_pick):
-        super().__init__(master)
+class ImagePicker(QDialog):
+    def __init__(self, parent, profile_id, default_query, on_pick):
+        super().__init__(parent)
         self.profile_id = profile_id
         self.on_pick = on_pick
-        self.selected_image = None  # PIL.Image
-        self._image_refs = []  # keep CTkImage references alive
+        self.selected_image = None
 
-        self.title("Choose Image")
-        self.geometry("460x480")
-        self.configure(fg_color=styles.BG_PRIMARY)
-        self.attributes("-topmost", True)
-        window_fx.apply_chrome(self)
+        self.setWindowTitle("Choose Image")
+        self.setWindowIcon(qt_utils.app_icon())
+        self.setFixedSize(420, 470)
+        self._opened = False
 
-        self._font_body = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=styles.SIZE_BODY)
-        self._font_bold = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=styles.SIZE_BODY, weight="bold")
-        self._font_small = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=styles.SIZE_SMALL)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 20, 24, 16)
+        lay.setSpacing(12)
 
-        tabs = customtkinter.CTkTabview(
-            self,
-            fg_color=styles.BG_SECONDARY,
-            segmented_button_fg_color=styles.BG_TERTIARY,
-            segmented_button_selected_color=styles.ACCENT,
-            segmented_button_selected_hover_color=styles.ACCENT_HOVER,
-            text_color=styles.TEXT_PRIMARY,
-        )
-        tabs.pack(fill="both", expand=True, padx=12, pady=12)
-        # Upload first so it is the default/active tab.
-        self._upload_tab = tabs.add("Upload")
-        self._search_tab = tabs.add("Search online")
+        title = QLabel("Choose an image")
+        font = title.font()
+        font.setPointSize(13)
+        font.setBold(True)
+        title.setFont(font)
+        lay.addWidget(title)
 
-        self._build_upload_tab()
-        self._build_search_stub()
+        sub = QLabel("PNG, JPG, ICO or WEBP — it will be cropped to a square.")
+        sub.setProperty("muted", True)
+        sfont = sub.font()
+        sfont.setPointSize(9)
+        sub.setFont(sfont)
+        lay.addWidget(sub)
 
-        self._use_btn = customtkinter.CTkButton(
-            self,
-            text="Use this image",
-            font=self._font_bold,
-            height=40,
-            corner_radius=styles.RADIUS_BUTTON,
-            fg_color=styles.ACCENT,
-            hover_color=styles.ACCENT_HOVER,
-            text_color=styles.TEXT_PRIMARY,
-            state="disabled",
-            command=self._confirm,
-        )
-        self._use_btn.pack(fill="x", padx=12, pady=(0, 12))
+        choose = QPushButton("Choose file…")
+        choose.setFixedHeight(40)
+        choose.clicked.connect(self._choose_file)
+        lay.addWidget(choose)
 
-    # --- upload tab ----------------------------------------------------------
-    def _build_upload_tab(self):
-        customtkinter.CTkLabel(
-            self._upload_tab,
-            text="Pick a local image (PNG, JPG, ICO, WEBP).\nIt will be cropped to a square.",
-            font=self._font_small,
-            text_color=styles.TEXT_MUTED,
-            justify="center",
-        ).pack(pady=(16, 12))
+        preview_wrap = QFrame()
+        preview_wrap.setObjectName("darkPanel")
+        pv_lay = QVBoxLayout(preview_wrap)
+        pv_lay.setContentsMargins(12, 12, 12, 12)
+        self.preview = QLabel("No image selected")
+        self.preview.setProperty("muted", True)
+        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview.setFixedHeight(200)
+        pv_lay.addWidget(self.preview)
+        lay.addWidget(preview_wrap)
 
-        customtkinter.CTkButton(
-            self._upload_tab,
-            text="Choose file…",
-            font=self._font_bold,
-            height=40,
-            corner_radius=styles.RADIUS_BUTTON,
-            fg_color=styles.ACCENT,
-            hover_color=styles.ACCENT_HOVER,
-            text_color=styles.TEXT_PRIMARY,
-            command=self._choose_file,
-        ).pack()
+        note = QLabel("Online image search is unavailable right now — free providers block automated requests.")
+        note.setProperty("muted", True)
+        nfont = note.font()
+        nfont.setPointSize(8)
+        note.setFont(nfont)
+        note.setWordWrap(True)
+        lay.addWidget(note)
 
-        self._upload_preview = customtkinter.CTkLabel(self._upload_tab, text="", width=160, height=160)
-        self._upload_preview.pack(pady=20)
+        lay.addStretch()
+
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        cancel = QPushButton("Cancel")
+        cancel.setProperty("kind", "ghost")
+        cancel.clicked.connect(self.close)
+        buttons.addWidget(cancel)
+        self.use_btn = QPushButton("Use this image")
+        self.use_btn.setEnabled(False)
+        self.use_btn.clicked.connect(self._confirm)
+        buttons.addWidget(self.use_btn)
+        lay.addLayout(buttons)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._opened:
+            self._opened = True
+            qt_utils.animate_open(self)
 
     def _choose_file(self):
-        path = filedialog.askopenfilename(
-            title="Select image",
-            filetypes=[("Images", "*.png *.jpg *.jpeg *.ico *.webp"), ("All files", "*.*")],
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select image", "", "Images (*.png *.jpg *.jpeg *.ico *.webp);;All files (*.*)"
         )
         if not path:
             return
@@ -129,36 +106,15 @@ class ImagePicker(customtkinter.CTkToplevel):
             img = Image.open(path)
             img.load()
         except Exception as exc:
-            self._upload_preview.configure(image=None, text=f"Could not open image:\n{exc}", text_color=styles.DANGER)
+            self.preview.setText(f"Could not open image:\n{exc}")
+            self.preview.setStyleSheet(f"color: {styles.DANGER};")
             return
 
         self.selected_image = img.convert("RGBA")
-        preview = customtkinter.CTkImage(_thumb_image(self.selected_image, 160), size=(160, 160))
-        self._image_refs.append(preview)
-        self._upload_preview.configure(image=preview, text="")
-        self._use_btn.configure(state="normal")
-        self.lift()
-        self.attributes("-topmost", True)
+        pm = qt_utils.crisp_from_pil(square_crop(self.selected_image, 512), 180, radius=16)
+        self.preview.setPixmap(pm)
+        self.use_btn.setEnabled(True)
 
-    # --- search tab (disabled stub) -----------------------------------------
-    def _build_search_stub(self):
-        customtkinter.CTkLabel(
-            self._search_tab,
-            text="Online search is unavailable right now.",
-            font=self._font_bold,
-            text_color=styles.TEXT_PRIMARY,
-        ).pack(pady=(40, 8))
-        customtkinter.CTkLabel(
-            self._search_tab,
-            text="Free image search providers are currently blocking\n"
-            "automated requests. For now, use the Upload tab to\n"
-            "add an image from your computer.",
-            font=self._font_small,
-            text_color=styles.TEXT_MUTED,
-            justify="center",
-        ).pack(pady=(0, 8))
-
-    # --- confirm -------------------------------------------------------------
     def _confirm(self):
         if self.selected_image is None:
             return
@@ -166,4 +122,4 @@ class ImagePicker(customtkinter.CTkToplevel):
         path = os.path.join(IMAGES_DIR, f"{self.profile_id}.png")
         square_crop(self.selected_image).save(path, "PNG")
         self.on_pick(path)
-        self.destroy()
+        self.close()

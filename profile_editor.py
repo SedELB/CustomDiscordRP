@@ -1,441 +1,464 @@
-import customtkinter
-from tkinter import StringVar, filedialog, messagebox
-from PIL import Image, ImageDraw
-import io
 import os
 import threading
 import uuid
+from PIL import Image
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QPixmap, QCursor, QPainter, QColor, QBrush
+from PyQt6.QtWidgets import (
+    QDialog, QWidget, QFrame, QLabel, QPushButton, QLineEdit, QFileDialog,
+    QVBoxLayout, QHBoxLayout, QScrollArea, QMessageBox,
+)
 import styles
+import qt_utils
 import image_picker
 import launcher_inject
-import window_fx
 
 MAX_FIELD = 128
 
 
-def _placeholder_image(size=72):
-    # Grey rounded square with a simple camera glyph, used when no image is set.
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    dc = ImageDraw.Draw(img)
-    dc.rounded_rectangle((0, 0, size - 1, size - 1), radius=10, fill="#1e1f22")
-    body_top = size * 0.38
-    dc.rounded_rectangle((size * 0.18, body_top, size * 0.82, size * 0.78), radius=5, fill="#4e5058")
-    dc.rectangle((size * 0.40, body_top - size * 0.08, size * 0.60, body_top), fill="#4e5058")
-    dc.ellipse((size * 0.40, size * 0.46, size * 0.62, size * 0.68), fill="#1e1f22")
-    return img
+def _label(text, size=None, bold=False, muted=False):
+    label = QLabel(text)
+    font = label.font()
+    if size:
+        font.setPointSize(size)
+    font.setBold(bold)
+    label.setFont(font)
+    if muted:
+        label.setProperty("muted", True)
+    return label
 
 
-class ProfileEditor(customtkinter.CTkToplevel):
-    def __init__(self, master, profile, on_save):
-        super().__init__(master)
+def _hint(text):
+    hint = _label(text, size=8, muted=True)
+    hint.setWordWrap(True)
+    return hint
+
+
+def _field(placeholder, value=""):
+    edit = QLineEdit()
+    edit.setPlaceholderText(placeholder)
+    edit.setText(value)
+    return edit
+
+
+def _card_edit(placeholder, value="", point_size=10, bold=False):
+    # Inline edit that lives directly on the presence card.
+    edit = QLineEdit()
+    edit.setProperty("cardEdit", True)
+    edit.setPlaceholderText(placeholder)
+    edit.setText(value)
+    edit.setMaxLength(MAX_FIELD)
+    font = edit.font()
+    font.setPointSize(point_size)
+    font.setBold(bold)
+    edit.setFont(font)
+    return edit
+
+
+class _AvatarDot(QWidget):
+    # Circular avatar with a Discord-style online dot, drawn over the banner edge.
+    def __init__(self, pixmap, size=64, parent=None):
+        super().__init__(parent)
+        self._pix = pixmap
+        self._size = size
+        self.setFixedSize(size + 8, size + 8)
+
+    def setPixmap(self, pixmap):
+        self._pix = pixmap
+        self.update()
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # ring matching the card background
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(styles.CARD_BG)))
+        p.drawEllipse(0, 0, self._size + 8, self._size + 8)
+        path_rect = self.rect().adjusted(4, 4, -4, -4)
+        p.setBrush(QBrush(QColor(styles.BG_TERTIARY)))
+        p.drawEllipse(path_rect)
+        if self._pix is not None:
+            # Scale in device pixels and tag the ratio so high-DPI screens stay sharp.
+            dpr = self.devicePixelRatioF()
+            target = max(1, round(self._size * dpr))
+            scaled = QPixmap(self._pix).scaled(
+                target, target,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            scaled.setDevicePixelRatio(dpr)
+            p.setClipping(True)
+            clip = self.rect().adjusted(4, 4, -4, -4)
+            from PyQt6.QtGui import QPainterPath
+            path = QPainterPath()
+            path.addEllipse(clip.toRectF())
+            p.setClipPath(path)
+            p.drawPixmap(4, 4, scaled)
+            p.setClipping(False)
+        # online dot
+        dot = 18
+        p.setBrush(QBrush(QColor(styles.CARD_BG)))
+        p.drawEllipse(self.width() - dot - 2, self.height() - dot - 2, dot, dot)
+        p.setBrush(QBrush(QColor(styles.SUCCESS)))
+        p.drawEllipse(self.width() - dot + 1, self.height() - dot + 1, dot - 6, dot - 6)
+        p.end()
+
+
+class ProfileEditor(QDialog):
+    url_image_ready = pyqtSignal(bytes)
+
+    def __init__(self, parent, profile, on_save):
+        super().__init__(parent)
         self.on_save = on_save
         self.is_new = profile is None
         self.profile = {} if profile is None else profile
-        # Need an id up front so the image picker can save assets/profile_images/<id>.png
         if "id" not in self.profile:
             self.profile["id"] = str(uuid.uuid4())
 
-        self.title("New Profile" if self.is_new else "Edit Profile")
-        self.geometry("500x760")
-        self.configure(fg_color=styles.BG_PRIMARY)
-        self.attributes("-topmost", True)
-        window_fx.apply_chrome(self)
+        self.setWindowTitle("New Profile" if self.is_new else "Edit Profile")
+        self.setWindowIcon(qt_utils.app_icon())
+        self.setFixedWidth(540)
+        self.resize(540, 780)
 
-        self._font_header = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=styles.SIZE_HEADER, weight="bold")
-        self._font_body = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=styles.SIZE_BODY)
-        self._font_bold = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=styles.SIZE_BODY, weight="bold")
-        self._font_small = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=styles.SIZE_SMALL)
-        self._font_tiny = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=11)
-        self._font_card_name = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=16, weight="bold")
-        self._font_card_header = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=11, weight="bold")
-        self._font_section = customtkinter.CTkFont(family=styles.FONT_FAMILY, size=11, weight="bold")
+        self.large_image_path = self.profile.get("large_image_path", "")
+        self._elapsed = 0
+        self._placeholder_pm = qt_utils.placeholder_pixmap(60)
+        self._avatar_placeholder_pm = qt_utils.pil_to_pixmap(qt_utils.placeholder_image_pil(128))
+        self._url_fetch_timer = None
+        self._opened = False
 
-        self._elapsed_seconds = 0
-        self._timer_id = None
-        self._placeholder = customtkinter.CTkImage(_placeholder_image(72), size=(72, 72))
-        self._image_ref = None
+        self._build_ui()
+        self._refresh_card_image()
 
-        self._build_vars()
-        self._build_layout()
-        self._refresh_image()
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start(1000)
         self._tick()
 
-        self.protocol("WM_DELETE_WINDOW", self._close)
+        self.url_image_ready.connect(self._on_url_image)
 
-    # --- state ---------------------------------------------------------------
-    def _build_vars(self):
-        p = self.profile
-        self.var_title = StringVar(value=p.get("profileTitle", ""))
-        self.var_exe = StringVar(value=p.get("targetExe", ""))
-        self.var_exe_path = StringVar(value=p.get("exe_path", ""))
-        self.var_app_id = StringVar(value=p.get("discord_app_id", ""))
-        self.var_name = StringVar(value=p.get("statusName", ""))
-        self.var_details = StringVar(value=p.get("details", ""))
-        self.var_state = StringVar(value=p.get("state", ""))
-        self.var_large_text = StringVar(value=p.get("large_image_text", ""))
-        self.var_small_text = StringVar(value=p.get("small_image_text", ""))
-        self.var_large_key = StringVar(value=p.get("large_image_url") or p.get("large_image_key") or "")
-        self.var_small_key = StringVar(value=p.get("small_image_url") or p.get("small_image_key") or "")
-        self.large_image_path = p.get("large_image_path", "")
+    # --- ui ------------------------------------------------------------------
+    def _build_ui(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        self._url_preview_job = None
-        self.var_large_key.trace_add("write", lambda *_: self._schedule_url_preview())
+        scroll = qt_utils.SmoothScrollArea()
+        scroll.setWidgetResizable(True)
+        host = QWidget()
+        body = QVBoxLayout(host)
+        body.setContentsMargins(24, 20, 24, 20)
+        body.setSpacing(12)
+        scroll.setWidget(host)
+        outer.addWidget(scroll, stretch=1)
+        outer.addWidget(self._build_bottom_bar())
 
-    # --- layout --------------------------------------------------------------
-    def _build_layout(self):
-        # Action bar pinned to the bottom; everything else scrolls above it.
-        self._build_actions(self)
+        body.addWidget(_label("New Profile" if self.is_new else "Edit Profile", size=15, bold=True))
+        sub = _hint("This card is your live preview — type directly on it.")
+        body.addWidget(sub)
+        body.addSpacing(4)
+        body.addWidget(self._build_popout())
+        body.addSpacing(8)
 
-        root = customtkinter.CTkScrollableFrame(self, fg_color=styles.BG_PRIMARY, corner_radius=0)
-        root.pack(fill="both", expand=True, padx=8, pady=(8, 0))
+        body.addWidget(self._build_app_section())
+        body.addWidget(self._build_discord_section())
+        body.addWidget(self._build_images_section())
+        body.addWidget(self._build_behavior_section())
+        body.addStretch()
 
-        customtkinter.CTkLabel(
-            root,
-            text="New Profile" if self.is_new else "Edit Profile",
-            font=self._font_header,
-            text_color=styles.TEXT_PRIMARY,
-            anchor="w",
-        ).pack(fill="x", padx=4, pady=(4, 2))
-        customtkinter.CTkLabel(
-            root,
-            text="Edit the card below — it's exactly what Discord will show.",
-            font=self._font_tiny,
-            text_color=styles.TEXT_MUTED,
-            anchor="w",
-        ).pack(fill="x", padx=4, pady=(0, 10))
+    def _build_popout(self):
+        # Discord profile-popout replica: banner, avatar, then the activity block.
+        card = QFrame()
+        card.setObjectName("presenceCard")
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(0, 0, 0, 16)
+        lay.setSpacing(0)
 
-        self._build_card(root)
-        self._build_supporting_fields(root)
-
-    def _section(self, parent, title):
-        outer = customtkinter.CTkFrame(parent, fg_color=styles.BG_SECONDARY, corner_radius=10)
-        outer.pack(fill="x", padx=4, pady=(12, 0))
-        customtkinter.CTkLabel(
-            outer, text=title, font=self._font_section, text_color=styles.TEXT_MUTED, anchor="w"
-        ).pack(fill="x", padx=16, pady=(12, 0))
-        inner = customtkinter.CTkFrame(outer, fg_color="transparent")
-        inner.pack(fill="x", padx=12, pady=(0, 16))
-        return inner
-
-    def _card_entry(self, parent, var, placeholder, font):
-        # An entry styled to blend into the card so editing happens in-place.
-        return customtkinter.CTkEntry(
-            parent,
-            textvariable=var,
-            placeholder_text=placeholder,
-            font=font,
-            height=30,
-            corner_radius=4,
-            fg_color=styles.CARD_BG,
-            border_color=styles.CARD_BG,
-            border_width=1,
-            text_color=styles.TEXT_PRIMARY,
+        banner = QFrame()
+        banner.setFixedHeight(56)
+        banner.setStyleSheet(
+            f"background: {styles.ACCENT}; border-top-left-radius: 8px; border-top-right-radius: 8px;"
         )
+        lay.addWidget(banner)
 
-    def _build_card(self, parent):
-        card = customtkinter.CTkFrame(parent, fg_color=styles.CARD_BG, corner_radius=styles.RADIUS_CARD)
-        card.pack(fill="x", padx=4, pady=(0, 4))
+        # avatar drawn over the banner edge, Discord-style
+        self._avatar = _AvatarDot(None, 64, parent=card)
+        self._avatar.move(14, 56 - 36)
+        self._avatar.raise_()
+        self._avatar.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._avatar.mouseReleaseEvent = lambda _e: self._open_image_picker()
+        self._avatar.setToolTip("Click to choose an image")
+        lay.addSpacing(42)
 
-        customtkinter.CTkLabel(
-            card, text="PLAYING A GAME", font=self._font_card_header, text_color=styles.TEXT_MUTED, anchor="w"
-        ).pack(fill="x", padx=16, pady=(16, 8))
+        content = QVBoxLayout()
+        content.setContentsMargins(16, 6, 16, 0)
+        content.setSpacing(4)
 
-        body = customtkinter.CTkFrame(card, fg_color="transparent")
-        body.pack(fill="x", padx=16, pady=(0, 16))
+        self.edit_title = _card_edit("Profile name", self.profile.get("profileTitle", ""), 12, bold=True)
+        content.addLayout(self._tight(self.edit_title))
 
-        self._img_button = customtkinter.CTkButton(
-            body,
-            text="",
-            image=self._placeholder,
-            width=72,
-            height=72,
-            fg_color=styles.CARD_BG,
-            hover_color=styles.CARD_HOVER,
-            corner_radius=10,
-            command=self._open_image_picker,
+        content.addSpacing(8)
+        activity = QFrame()
+        activity.setObjectName("darkPanel")
+        act_lay = QVBoxLayout(activity)
+        act_lay.setContentsMargins(12, 10, 12, 12)
+        act_lay.setSpacing(6)
+
+        act_lay.addWidget(_label("PLAYING A GAME", size=8, bold=True, muted=True))
+
+        act_row = QHBoxLayout()
+        act_row.setSpacing(12)
+        self._game_image = QLabel()
+        self._game_image.setFixedSize(60, 60)
+        self._game_image.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._game_image.mouseReleaseEvent = lambda _e: self._open_image_picker()
+        self._game_image.setToolTip("Click to choose an image")
+        act_row.addWidget(self._game_image, alignment=Qt.AlignmentFlag.AlignTop)
+
+        lines = QVBoxLayout()
+        lines.setSpacing(1)
+        self.edit_name = _card_edit("Application name", self.profile.get("statusName", ""), 10, bold=True)
+        self.edit_details = _card_edit("What are you doing?", self.profile.get("details", ""), 9)
+        self.edit_state = _card_edit("More details…", self.profile.get("state", ""), 9)
+        lines.addWidget(self.edit_name)
+        lines.addWidget(self.edit_details)
+        lines.addWidget(self.edit_state)
+        self.lbl_elapsed = _label("00:00 elapsed", size=9, muted=True)
+        self.lbl_elapsed.setContentsMargins(4, 1, 0, 0)
+        lines.addWidget(self.lbl_elapsed)
+        act_row.addLayout(lines, stretch=1)
+        act_lay.addLayout(act_row)
+
+        content.addWidget(activity)
+        lay.addLayout(content)
+        return card
+
+    @staticmethod
+    def _tight(widget):
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(widget)
+        return row
+
+    def _section(self, title):
+        panel = QFrame()
+        panel.setObjectName("panel")
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(16, 14, 16, 16)
+        lay.setSpacing(8)
+        section_label = _label(title, size=8, bold=True)
+        section_label.setProperty("role", "section")
+        lay.addWidget(section_label)
+        return panel, lay
+
+    def _build_app_section(self):
+        panel, lay = self._section("APPLICATION")
+
+        lay.addWidget(_label("Executable", size=9, bold=True))
+        exe_row = QHBoxLayout()
+        exe_row.setSpacing(8)
+        self.edit_exe = _field("SLDWORKS.exe", self.profile.get("targetExe", ""))
+        exe_row.addWidget(self.edit_exe, stretch=1)
+        browse = QPushButton("Browse")
+        browse.setProperty("kind", "outline")
+        browse.clicked.connect(self._pick_exe)
+        exe_row.addWidget(browse)
+        lay.addLayout(exe_row)
+        lay.addWidget(_hint("Pick the .exe or type its name — the profile activates while it runs."))
+
+        self.exe_path = self.profile.get("exe_path", "")
+
+        bat = QPushButton("Create .bat launcher")
+        bat.setProperty("kind", "outline")
+        bat.clicked.connect(self._create_launcher)
+        lay.addWidget(bat)
+        lay.addWidget(_hint("Generates a .bat next to the .exe that activates this profile, then launches the app."))
+        return panel
+
+    def _build_discord_section(self):
+        panel, lay = self._section("DISCORD")
+        lay.addWidget(_label("Application ID", size=9, bold=True))
+        self.edit_app_id = _field("123456789012345678", self.profile.get("discord_app_id", ""))
+        lay.addWidget(self.edit_app_id)
+        link = QLabel(
+            f'Create an app at <a style="color:{styles.TEXT_LINK};" '
+            f'href="https://discord.com/developers/applications">discord.com/developers</a> '
+            "→ copy its Application ID."
         )
-        self._img_button.pack(side="left", anchor="n")
+        link.setOpenExternalLinks(True)
+        link.setProperty("muted", True)
+        font = link.font()
+        font.setPointSize(8)
+        link.setFont(font)
+        lay.addWidget(link)
+        return panel
 
-        text_col = customtkinter.CTkFrame(body, fg_color="transparent")
-        text_col.pack(side="left", fill="x", expand=True, padx=(14, 0))
-
-        self._card_entry(text_col, self.var_name, "Application name", self._font_card_name).pack(fill="x")
-        self._card_entry(text_col, self.var_details, "Details line", self._font_small).pack(fill="x", pady=(2, 0))
-        self._card_entry(text_col, self.var_state, "State line", self._font_small).pack(fill="x", pady=(2, 0))
-        self._lbl_elapsed = customtkinter.CTkLabel(
-            text_col, text="", font=self._font_small, text_color=styles.TEXT_MUTED, anchor="w"
+    def _build_images_section(self):
+        panel, lay = self._section("IMAGES")
+        lay.addWidget(_label("Large image — asset key or URL", size=9, bold=True))
+        self.edit_large_key = _field(
+            "Asset name from the dev portal, or an https:// image URL",
+            self.profile.get("large_image_url") or self.profile.get("large_image_key") or "",
         )
-        self._lbl_elapsed.pack(fill="x", padx=4, pady=(4, 0))
+        self.edit_large_key.textChanged.connect(self._schedule_url_preview)
+        lay.addWidget(self.edit_large_key)
+        lay.addWidget(_hint(
+            "This is what Discord actually displays. Upload an asset in your app's "
+            "Rich Presence → Art Assets and type its name, or paste a public image URL."
+        ))
 
-        status = customtkinter.CTkFrame(parent, fg_color="transparent")
-        status.pack(fill="x", padx=8, pady=(2, 12))
-        customtkinter.CTkLabel(status, text="●", font=self._font_small, text_color=styles.SUCCESS).pack(side="left")
-        customtkinter.CTkLabel(
-            status, text="Online", font=self._font_small, text_color=styles.TEXT_MUTED
-        ).pack(side="left", padx=(6, 0))
-        customtkinter.CTkLabel(
-            status,
-            text="Click the image to search or upload one.",
-            font=self._font_tiny,
-            text_color=styles.TEXT_MUTED,
-        ).pack(side="right")
+        lay.addWidget(_label("Large image tooltip", size=9, bold=True))
+        self.edit_large_text = _field("Hover text for the large image", self.profile.get("large_image_text", ""))
+        lay.addWidget(self.edit_large_text)
 
-    def _label(self, parent, text):
-        customtkinter.CTkLabel(
-            parent, text=text, font=self._font_bold, text_color=styles.TEXT_PRIMARY, anchor="w"
-        ).pack(fill="x", padx=4, pady=(14, 2))
-
-    def _entry(self, parent, var, placeholder):
-        customtkinter.CTkEntry(
-            parent,
-            textvariable=var,
-            placeholder_text=placeholder,
-            font=self._font_body,
-            height=36,
-            corner_radius=styles.RADIUS_INPUT,
-            fg_color=styles.BG_TERTIARY,
-            border_color=styles.BORDER,
-            border_width=1,
-            text_color=styles.TEXT_PRIMARY,
-        ).pack(fill="x", padx=4)
-
-    def _hint(self, parent, text):
-        customtkinter.CTkLabel(
-            parent, text=text, font=self._font_tiny, text_color=styles.TEXT_MUTED, anchor="w", justify="left"
-        ).pack(fill="x", padx=4, pady=(2, 0))
-
-    def _build_supporting_fields(self, parent):
-        app_section = self._section(parent, "APPLICATION")
-        self._label(app_section, "Profile title")
-        self._entry(app_section, self.var_title, "Label shown in your profile list")
-
-        self._label(app_section, "Executable")
-        exe_row = customtkinter.CTkFrame(app_section, fg_color="transparent")
-        exe_row.pack(fill="x", padx=4)
-        customtkinter.CTkEntry(
-            exe_row,
-            textvariable=self.var_exe,
-            placeholder_text="SLDWORKS.exe",
-            font=self._font_body,
-            height=36,
-            corner_radius=styles.RADIUS_INPUT,
-            fg_color=styles.BG_TERTIARY,
-            border_color=styles.BORDER,
-            border_width=1,
-            text_color=styles.TEXT_PRIMARY,
-        ).pack(side="left", fill="x", expand=True)
-        customtkinter.CTkButton(
-            exe_row,
-            text="Browse",
-            width=80,
-            height=36,
-            font=self._font_small,
-            corner_radius=styles.RADIUS_BUTTON,
-            fg_color=styles.BG_TERTIARY,
-            hover_color=styles.BORDER,
-            text_color=styles.TEXT_PRIMARY,
-            command=self._pick_exe,
-        ).pack(side="left", padx=(8, 0))
-        self._hint(app_section, "Pick the .exe or type its name — the profile activates while it runs.")
-
-        customtkinter.CTkButton(
-            app_section,
-            text="Create .bat launcher",
-            font=self._font_small,
-            height=32,
-            corner_radius=styles.RADIUS_BUTTON,
-            fg_color=styles.BG_TERTIARY,
-            hover_color=styles.BORDER,
-            text_color=styles.TEXT_PRIMARY,
-            command=self._create_launcher,
-        ).pack(fill="x", padx=4, pady=(10, 0))
-        self._hint(app_section, "Generates a .bat next to the .exe that activates this profile, then launches the app.")
-
-        discord_section = self._section(parent, "DISCORD")
-        self._label(discord_section, "Discord App ID")
-        self._entry(discord_section, self.var_app_id, "123456789012345678")
-        self._hint(discord_section, "Create an app at discord.com/developers → copy its Application ID.")
-
-        images_section = self._section(parent, "IMAGES")
-        self._label(images_section, "Large image — asset key or URL")
-        self._entry(images_section, self.var_large_key, "Asset name from the dev portal, or an https:// image URL")
-        self._hint(
-            images_section,
-            "This is what Discord actually displays. Upload an asset in your app's\n"
-            "Rich Presence → Art Assets and type its name, or paste a public image URL.",
+        lay.addWidget(_label("Small image — asset key or URL", size=9, bold=True))
+        self.edit_small_key = _field(
+            "Optional corner badge image",
+            self.profile.get("small_image_url") or self.profile.get("small_image_key") or "",
         )
+        lay.addWidget(self.edit_small_key)
 
-        self._label(images_section, "Large image tooltip")
-        self._entry(images_section, self.var_large_text, "Hover text for the large image")
+        lay.addWidget(_label("Small image tooltip", size=9, bold=True))
+        self.edit_small_text = _field("Hover text for the small image", self.profile.get("small_image_text", ""))
+        lay.addWidget(self.edit_small_text)
+        return panel
 
-        self._label(images_section, "Small image — asset key or URL")
-        self._entry(images_section, self.var_small_key, "Optional corner badge image")
+    def _build_behavior_section(self):
+        panel, lay = self._section("BEHAVIOR")
 
-        self._label(images_section, "Small image tooltip")
-        self._entry(images_section, self.var_small_text, "Hover text for the small image")
+        row1 = QHBoxLayout()
+        row1.addWidget(_label("Show elapsed time", size=9))
+        row1.addStretch()
+        self.switch_elapsed = qt_utils.Switch(self.profile.get("show_elapsed", True), on_change=self._elapsed_toggled)
+        row1.addWidget(self.switch_elapsed)
+        lay.addLayout(row1)
 
-        toggles = self._section(parent, "BEHAVIOR")
-        self.switch_elapsed = customtkinter.CTkSwitch(
-            toggles,
-            text="Show elapsed time",
-            font=self._font_body,
-            text_color=styles.TEXT_PRIMARY,
-            progress_color=styles.ACCENT,
-            command=self._refresh_elapsed_visibility,
-        )
-        self.switch_elapsed.pack(anchor="w", pady=4)
-        if self.profile.get("show_elapsed", True):
-            self.switch_elapsed.select()
+        row2 = QHBoxLayout()
+        row2.addWidget(_label("Enable profile", size=9))
+        row2.addStretch()
+        self.switch_enabled = qt_utils.Switch(self.profile.get("enabled", True))
+        row2.addWidget(self.switch_enabled)
+        lay.addLayout(row2)
+        return panel
 
-        self.switch_enabled = customtkinter.CTkSwitch(
-            toggles,
-            text="Enable profile",
-            font=self._font_body,
-            text_color=styles.TEXT_PRIMARY,
-            progress_color=styles.SUCCESS,
-        )
-        self.switch_enabled.pack(anchor="w", pady=4)
-        if self.profile.get("enabled", True):
-            self.switch_enabled.select()
-
-    def _build_actions(self, parent):
-        bar = customtkinter.CTkFrame(parent, fg_color=styles.BG_SECONDARY, corner_radius=0, height=64)
-        bar.pack(side="bottom", fill="x")
-        bar.pack_propagate(False)
-        customtkinter.CTkButton(
-            bar,
-            text="Save Profile",
-            font=self._font_bold,
-            width=150,
-            height=40,
-            corner_radius=styles.RADIUS_BUTTON,
-            fg_color=styles.ACCENT,
-            hover_color=styles.ACCENT_HOVER,
-            text_color=styles.TEXT_PRIMARY,
-            command=self._save,
-        ).pack(side="right", padx=(8, 16), pady=12)
-        customtkinter.CTkButton(
-            bar,
-            text="Cancel",
-            font=self._font_body,
-            width=90,
-            height=40,
-            corner_radius=styles.RADIUS_BUTTON,
-            fg_color="transparent",
-            hover_color=styles.BG_TERTIARY,
-            text_color=styles.TEXT_MUTED,
-            command=self._close,
-        ).pack(side="right", pady=12)
+    def _build_bottom_bar(self):
+        bar = QFrame()
+        bar.setObjectName("bottomBar")
+        bar.setFixedHeight(64)
+        lay = QHBoxLayout(bar)
+        lay.setContentsMargins(16, 12, 16, 12)
+        lay.addStretch()
+        cancel = QPushButton("Cancel")
+        cancel.setProperty("kind", "ghost")
+        cancel.clicked.connect(self.close)
+        lay.addWidget(cancel)
+        save = QPushButton("Save Profile")
+        save.setFixedWidth(150)
+        save.clicked.connect(self._save)
+        lay.addWidget(save)
+        return bar
 
     # --- behaviour -----------------------------------------------------------
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._opened:
+            self._opened = True
+            qt_utils.animate_open(self)
+
+    def _tick(self):
+        mins, secs = divmod(self._elapsed, 60)
+        self.lbl_elapsed.setText(f"{mins:02d}:{secs:02d} elapsed")
+        self._elapsed += 1
+
+    def _elapsed_toggled(self, checked):
+        self.lbl_elapsed.setVisible(checked)
+
     def _open_image_picker(self):
-        default_query = (self.var_name.get() or self.var_title.get() or "logo").strip() + " logo"
-        image_picker.ImagePicker(self, self.profile["id"], default_query, self._on_image_picked)
+        default_query = (self.edit_name.text() or self.edit_title.text() or "logo").strip() + " logo"
+        picker = image_picker.ImagePicker(self, self.profile["id"], default_query, self._on_image_picked)
+        picker.exec()
 
     def _on_image_picked(self, path):
         self.large_image_path = path
-        self._refresh_image()
-        self.lift()
-        self.attributes("-topmost", True)
+        self._refresh_card_image()
 
-    def _refresh_image(self):
+    def _refresh_card_image(self):
         if self.large_image_path and os.path.exists(self.large_image_path):
             try:
-                img = Image.open(self.large_image_path).convert("RGBA")
-                self._image_ref = customtkinter.CTkImage(img, size=(72, 72))
-                self._img_button.configure(image=self._image_ref)
+                img = Image.open(self.large_image_path)
+                self._game_image.setPixmap(qt_utils.crisp_from_pil(img, 60, radius=10))
+                self._avatar.setPixmap(qt_utils.pil_to_pixmap(img))
                 return
             except Exception:
                 pass
-        self._img_button.configure(image=self._placeholder)
-
-    def _create_launcher(self):
-        profile = {
-            "id": self.profile["id"],
-            "exe_path": self.var_exe_path.get().strip(),
-        }
-        bat_path, error = launcher_inject.make_bat_launcher(profile)
-        if error:
-            messagebox.showerror("Launcher", error, parent=self)
-            return
-        messagebox.showinfo(
-            "Launcher created",
-            f"Created:\n{bat_path}\n\nRun this .bat instead of the .exe directly, "
-            "or pin it to your taskbar.",
-            parent=self,
-        )
-        self.lift()
-        self.attributes("-topmost", True)
+        self._game_image.setPixmap(self._placeholder_pm)
+        self._avatar.setPixmap(self._avatar_placeholder_pm)
 
     def _pick_exe(self):
-        path = filedialog.askopenfilename(
-            title="Select executable", filetypes=[("Executables", "*.exe"), ("All files", "*.*")]
-        )
+        path, _ = QFileDialog.getOpenFileName(self, "Select executable", "", "Executables (*.exe);;All files (*.*)")
         if not path:
             return
-        self.var_exe_path.set(path)
-        self.var_exe.set(os.path.basename(path))
-        self.lift()
-        self.attributes("-topmost", True)
+        self.exe_path = path
+        self.edit_exe.setText(os.path.basename(path))
 
-    def _refresh_elapsed_visibility(self):
-        if self.switch_elapsed.get():
-            self._lbl_elapsed.pack(fill="x", padx=4, pady=(4, 0))
-        else:
-            self._lbl_elapsed.pack_forget()
-
-    def _tick(self):
-        if not self.winfo_exists():
+    def _create_launcher(self):
+        profile = {"id": self.profile["id"], "exe_path": self.exe_path}
+        bat_path, error = launcher_inject.make_bat_launcher(profile)
+        if error:
+            QMessageBox.warning(self, "Launcher", error)
             return
-        mins, secs = divmod(self._elapsed_seconds, 60)
-        self._lbl_elapsed.configure(text=f"{mins:02d}:{secs:02d} elapsed")
-        self._elapsed_seconds += 1
-        self._timer_id = self.after(1000, self._tick)
+        QMessageBox.information(
+            self, "Launcher created",
+            f"Created:\n{bat_path}\n\nRun this .bat instead of the .exe directly, or pin it to your taskbar.",
+        )
 
+    # URL → live preview on the card
+    def _schedule_url_preview(self):
+        if self._url_fetch_timer is not None:
+            self._url_fetch_timer.stop()
+        self._url_fetch_timer = QTimer(self)
+        self._url_fetch_timer.setSingleShot(True)
+        self._url_fetch_timer.timeout.connect(self._fetch_url_preview)
+        self._url_fetch_timer.start(700)
+
+    def _fetch_url_preview(self):
+        if self.large_image_path:
+            return  # a locally picked image owns the thumbnail
+        url = self.edit_large_key.text().strip()
+        if not url.lower().startswith(("http://", "https://")):
+            return
+        threading.Thread(target=self._url_worker, args=(url,), daemon=True).start()
+
+    def _url_worker(self, url):
+        try:
+            import requests
+            res = requests.get(url, timeout=8)
+            if res.status_code == 200:
+                self.url_image_ready.emit(res.content)
+        except Exception:
+            pass
+
+    def _on_url_image(self, data):
+        if self.large_image_path:
+            return
+        try:
+            import io
+            pil = Image.open(io.BytesIO(data)).convert("RGBA")
+        except Exception:
+            return
+        self._game_image.setPixmap(qt_utils.crisp_from_pil(pil, 60, radius=10))
+        self._avatar.setPixmap(qt_utils.pil_to_pixmap(pil))
+
+    # --- save ----------------------------------------------------------------
     @staticmethod
     def _split_key_or_url(value):
-        # Discord accepts either a dev-portal asset key or a plain image URL.
         value = value.strip()
         if value.lower().startswith(("http://", "https://")):
             return None, value
         return (value or None), None
 
-    def _schedule_url_preview(self):
-        # Debounce so we only fetch once typing/pasting settles.
-        if self._url_preview_job is not None:
-            self.after_cancel(self._url_preview_job)
-        self._url_preview_job = self.after(700, self._fetch_url_preview)
-
-    def _fetch_url_preview(self):
-        self._url_preview_job = None
-        # A locally picked image owns the card thumbnail.
-        if self.large_image_path:
-            return
-        url = self.var_large_key.get().strip()
-        if not url.lower().startswith(("http://", "https://")):
-            return
-        threading.Thread(target=self._url_preview_worker, args=(url,), daemon=True).start()
-
-    def _url_preview_worker(self, url):
-        try:
-            import requests
-            res = requests.get(url, timeout=8)
-            img = Image.open(io.BytesIO(res.content)).convert("RGBA")
-        except Exception:
-            return
-        if not self.winfo_exists():
-            return
-        if url != self.var_large_key.get().strip():
-            return  # field changed while downloading
-        self.after(0, lambda: self._apply_url_preview(img))
-
-    def _apply_url_preview(self, img):
-        if not self.winfo_exists() or self.large_image_path:
-            return
-        self._image_ref = customtkinter.CTkImage(img, size=(72, 72))
-        self._img_button.configure(image=self._image_ref)
-
-    def _normalize_exe(self, value):
+    @staticmethod
+    def _normalize_exe(value):
         value = value.strip()
         if value and not value.lower().endswith(".exe"):
             value = value + ".exe"
@@ -443,29 +466,20 @@ class ProfileEditor(customtkinter.CTkToplevel):
 
     def _save(self):
         p = self.profile
-        p["profileTitle"] = self.var_title.get().strip() or "Untitled"
-        p["targetExe"] = self._normalize_exe(self.var_exe.get())
-        p["exe_path"] = self.var_exe_path.get().strip()
-        p["discord_app_id"] = self.var_app_id.get().strip()
-        p["statusName"] = self.var_name.get().strip()[:MAX_FIELD]
-        p["details"] = self.var_details.get().strip()[:MAX_FIELD]
-        p["state"] = self.var_state.get().strip()[:MAX_FIELD]
-        p["large_image_text"] = self.var_large_text.get().strip()
-        p["small_image_text"] = self.var_small_text.get().strip()
-        p["large_image_key"], p["large_image_url"] = self._split_key_or_url(self.var_large_key.get())
-        p["small_image_key"], p["small_image_url"] = self._split_key_or_url(self.var_small_key.get())
+        p["profileTitle"] = self.edit_title.text().strip() or "Untitled"
+        p["targetExe"] = self._normalize_exe(self.edit_exe.text())
+        p["exe_path"] = self.exe_path.strip()
+        p["discord_app_id"] = self.edit_app_id.text().strip()
+        p["statusName"] = self.edit_name.text().strip()[:MAX_FIELD]
+        p["details"] = self.edit_details.text().strip()[:MAX_FIELD]
+        p["state"] = self.edit_state.text().strip()[:MAX_FIELD]
+        p["large_image_text"] = self.edit_large_text.text().strip()
+        p["small_image_text"] = self.edit_small_text.text().strip()
+        p["large_image_key"], p["large_image_url"] = self._split_key_or_url(self.edit_large_key.text())
+        p["small_image_key"], p["small_image_url"] = self._split_key_or_url(self.edit_small_key.text())
         p["large_image_path"] = self.large_image_path
-        p["show_elapsed"] = bool(self.switch_elapsed.get())
-        p["enabled"] = bool(self.switch_enabled.get())
+        p["show_elapsed"] = self.switch_elapsed.isChecked()
+        p["enabled"] = self.switch_enabled.isChecked()
 
         self.on_save(p, self.is_new)
-        self._close()
-
-    def _close(self):
-        if self._timer_id is not None:
-            self.after_cancel(self._timer_id)
-            self._timer_id = None
-        if self._url_preview_job is not None:
-            self.after_cancel(self._url_preview_job)
-            self._url_preview_job = None
-        self.destroy()
+        self.close()
