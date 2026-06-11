@@ -47,7 +47,7 @@ def _mono_label(text, size=None, bold=False, muted=False, parent=None):
     return label
 
 
-class ProfileRow(QFrame, qt_utils.HoverColorMixin):
+class ProfileRow(qt_utils.HoverColorMixin, QFrame):
     def __init__(self, profile, window):
         super().__init__()
         self.profile = profile
