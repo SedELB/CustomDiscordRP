@@ -123,7 +123,6 @@ class ProfileEditor(QDialog):
         self.large_image_path = self.profile.get("large_image_path", "")
         self._elapsed = 0
         self._placeholder_pm = qt_utils.placeholder_pixmap(60)
-        self._avatar_placeholder_pm = qt_utils.pil_to_pixmap(qt_utils.placeholder_image_pil(128))
         self._url_fetch_timer = None
         self._opened = False
 
@@ -153,7 +152,7 @@ class ProfileEditor(QDialog):
         outer.addWidget(self._build_bottom_bar())
 
         body.addWidget(_label("New Profile" if self.is_new else "Edit Profile", size=15, bold=True))
-        sub = _hint("This card is your live preview — type directly on it.")
+        sub = _hint("Live preview — type on the card, and click the game image to set what Discord shows.")
         body.addWidget(sub)
         body.addSpacing(4)
         body.addWidget(self._build_popout())
@@ -180,13 +179,13 @@ class ProfileEditor(QDialog):
         )
         lay.addWidget(banner)
 
-        # avatar drawn over the banner edge, Discord-style
-        self._avatar = _AvatarDot(None, 64, parent=card)
+        # Generic Discord account avatar over the banner edge. This represents
+        # your Discord profile picture, which Rich Presence can't change — only
+        # the activity image below is editable.
+        self._avatar = _AvatarDot(qt_utils.pil_to_pixmap(qt_utils.discord_avatar_pil(128)), 64, parent=card)
         self._avatar.move(14, 56 - 36)
         self._avatar.raise_()
-        self._avatar.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self._avatar.mouseReleaseEvent = lambda _e: self._open_image_picker()
-        self._avatar.setToolTip("Click to choose an image")
+        self._avatar.setToolTip("Your Discord avatar — Rich Presence can't change this")
         lay.addSpacing(42)
 
         content = QVBoxLayout()
@@ -405,16 +404,15 @@ class ProfileEditor(QDialog):
             self._img_status.setText("")
 
     def _refresh_card_image(self):
+        # Only the activity (RP) image changes; the avatar stays the generic one.
         if self.large_image_path and os.path.exists(self.large_image_path):
             try:
                 img = Image.open(self.large_image_path)
                 self._game_image.setPixmap(qt_utils.crisp_from_pil(img, 60, radius=10))
-                self._avatar.setPixmap(qt_utils.pil_to_pixmap(img))
                 return
             except Exception:
                 pass
         self._game_image.setPixmap(self._placeholder_pm)
-        self._avatar.setPixmap(self._avatar_placeholder_pm)
 
     def _pick_exe(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select executable", "", "Executables (*.exe);;All files (*.*)")
@@ -460,7 +458,6 @@ class ProfileEditor(QDialog):
         except Exception:
             return
         self._game_image.setPixmap(qt_utils.crisp_from_pil(pil, 60, radius=10))
-        self._avatar.setPixmap(qt_utils.pil_to_pixmap(pil))
 
     # --- save ----------------------------------------------------------------
     @staticmethod

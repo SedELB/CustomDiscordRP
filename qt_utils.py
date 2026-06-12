@@ -90,6 +90,35 @@ def crisp_from_pil(img, logical_size, radius=None):
     return pil_to_pixmap(pil, dpr)
 
 
+def discord_avatar_pil(size=64):
+    # Generic Discord "new user" avatar: blurple circle + white Clyde mark.
+    big = size * SS
+    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    dc = ImageDraw.Draw(img)
+    dc.ellipse((0, 0, big - 1, big - 1), fill=styles.ACCENT)
+
+    # Clyde logo, centred. Body is a rounded "controller" with two feet + two eyes.
+    lw, lh = big * 0.60, big * 0.46
+    lx, ly = (big - lw) / 2, (big - lh) / 2
+    white = "#ffffff"
+    # head / body
+    dc.rounded_rectangle((lx, ly, lx + lw, ly + lh * 0.84), radius=lh * 0.42, fill=white)
+    # feet (rounded protrusions at the bottom corners)
+    foot_w = lw * 0.34
+    dc.ellipse((lx, ly + lh * 0.40, lx + foot_w, ly + lh), fill=white)
+    dc.ellipse((lx + lw - foot_w, ly + lh * 0.40, lx + lw, ly + lh), fill=white)
+    # eyes (blurple vertical pills)
+    eye_w, eye_h = lw * 0.135, lh * 0.40
+    eye_y = ly + lh * 0.30
+    dc.rounded_rectangle(
+        (lx + lw * 0.26, eye_y, lx + lw * 0.26 + eye_w, eye_y + eye_h), radius=eye_w / 2, fill=styles.ACCENT
+    )
+    dc.rounded_rectangle(
+        (lx + lw * 0.605, eye_y, lx + lw * 0.605 + eye_w, eye_y + eye_h), radius=eye_w / 2, fill=styles.ACCENT
+    )
+    return img.resize((size, size), Image.LANCZOS)
+
+
 def placeholder_image_pil(size=60):
     # Grey rounded square with a camera glyph, used when no image is set.
     big = size * SS
@@ -236,7 +265,8 @@ class Switch(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(track))
         p.drawRoundedRect(QRectF(0, 2, 40, 20), 10.0, 10.0)
-        x = 4.0 + self._pos * (40 - 20 - 8)
+        # knob: 16px wide, 4px margins -> travel = 40 - 16 - 2*4 = 16
+        x = 4.0 + self._pos * 16.0
         p.setBrush(QBrush(QColor("#ffffff")))
         p.drawEllipse(QRectF(x, 4.0, 16.0, 16.0))
         p.end()

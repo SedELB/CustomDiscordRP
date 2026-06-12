@@ -75,19 +75,27 @@ class ProfileRow(qt_utils.HoverColorMixin, QFrame):
         lay.addLayout(text_col, stretch=1)
 
         self.switch = qt_utils.Switch(profile.get("enabled", True), self, on_change=self._toggle)
-        lay.addWidget(self.switch)
+        self.switch.setToolTip("Enable this profile")
+        lay.addWidget(self.switch, alignment=Qt.AlignmentFlag.AlignVCenter)
+        lay.addSpacing(4)
 
         edit_btn = QPushButton("Edit")
         edit_btn.setProperty("kind", "outline")
-        edit_btn.setFixedHeight(30)
+        edit_btn.setProperty("compact", True)
+        edit_btn.setFixedHeight(34)
+        edit_btn.setMinimumWidth(64)
+        edit_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         edit_btn.clicked.connect(lambda: self.window.open_editor(self.profile))
-        lay.addWidget(edit_btn)
+        lay.addWidget(edit_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         delete_btn = QPushButton("Delete")
         delete_btn.setProperty("kind", "danger-ghost")
-        delete_btn.setFixedHeight(30)
+        delete_btn.setProperty("compact", True)
+        delete_btn.setFixedHeight(34)
+        delete_btn.setMinimumWidth(72)
+        delete_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         delete_btn.clicked.connect(self._delete)
-        lay.addWidget(delete_btn)
+        lay.addWidget(delete_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 
     def _subtitle(self):
         parts = []

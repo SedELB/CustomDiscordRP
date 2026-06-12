@@ -93,6 +93,7 @@ QPushButton {{
 QPushButton:hover {{ background: {ACCENT_HOVER}; }}
 QPushButton:pressed {{ background: {ACCENT_DOWN}; }}
 QPushButton:disabled {{ background: {BORDER}; color: {TEXT_MUTED}; }}
+QPushButton[compact="true"] {{ padding: 5px 14px; font-weight: 600; }}
 
 QPushButton[kind="ghost"] {{
     background: transparent;
