@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
 )
 import styles
 import qt_utils
+import startup
 import profile_editor
 
 app_data = {
@@ -181,6 +182,19 @@ class MainWindow(QMainWindow):
 
         lay.addStretch()
 
+        # Run-on-startup toggle
+        startup_row = QHBoxLayout()
+        startup_row.setContentsMargins(4, 0, 4, 0)
+        startup_lbl = _mono_label("Run on startup", size=9)
+        startup_lbl.setToolTip("Launch CustomRP in the tray when Windows starts, so your apps are detected automatically")
+        startup_row.addWidget(startup_lbl)
+        startup_row.addStretch()
+        self.startup_switch = qt_utils.Switch(startup.is_enabled(), on_change=self._on_startup_toggle)
+        self.startup_switch.setToolTip("Launch CustomRP automatically when Windows starts")
+        startup_row.addWidget(self.startup_switch)
+        lay.addLayout(startup_row)
+        lay.addSpacing(12)
+
         panel = QFrame()
         panel.setObjectName("darkPanel")
         panel_lay = QVBoxLayout(panel)
@@ -344,6 +358,12 @@ class MainWindow(QMainWindow):
             self.status_detail.setText("Monitoring is off")
         self.power_button.style().unpolish(self.power_button)
         self.power_button.style().polish(self.power_button)
+
+    def _on_startup_toggle(self, enabled):
+        ok = startup.set_enabled(enabled)
+        # If the registry write failed, snap the switch back to the real state.
+        if not ok or startup.is_enabled() != enabled:
+            self.startup_switch.setChecked(startup.is_enabled(), animate=True)
 
     def report_activity(self, title):
         if title:

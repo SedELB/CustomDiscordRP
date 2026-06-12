@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import threading
 import time
@@ -105,12 +106,28 @@ def _parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", type=str, help="Profile ID to activate on launch")
     parser.add_argument("--launch", action="store_true", help="Immediately activate profile and start monitoring")
+    parser.add_argument("--startup", action="store_true", help="Start hidden in the tray with monitoring on")
     args, _unknown = parser.parse_known_args()
     return args
 
 
+def _set_base_dir():
+    # Resolve config.json / assets relative to the app, not the launch cwd
+    # (Windows startup launches with cwd = system32).
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    try:
+        os.chdir(base)
+    except OSError:
+        pass
+
+
 def main():
     global forced_profile_id
+
+    _set_base_dir()
 
     args = _parse_args()
     if args.profile:
@@ -150,8 +167,9 @@ def main():
     bridge.activity.connect(window.report_activity)
     bridge.tray_state.connect(tray.set_state)
 
-    if args.launch:
-        # Launched from a .bat wrapper: start monitoring immediately, stay in the tray.
+    if args.launch or args.startup:
+        # .bat wrapper (--launch) or Windows startup (--startup): begin monitoring
+        # immediately and stay hidden in the tray.
         start_monitoring()
         window.update_power_visual(True)
     else:
