@@ -134,7 +134,7 @@ class ImagePicker(QDialog):
         if self._pending <= 0:
             count = len(self._thumb_buttons)
             self.search_status.setText(
-                f"{count} logo{'s' if count != 1 else ''} — click one to select." if count
+                f"{count} logo{'s' if count != 1 else ''} found. Click one to select." if count
                 else "No logos loaded. Try the Upload tab."
             )
 

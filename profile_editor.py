@@ -152,7 +152,7 @@ class ProfileEditor(QDialog):
         outer.addWidget(self._build_bottom_bar())
 
         body.addWidget(_label("New Profile" if self.is_new else "Edit Profile", size=15, bold=True))
-        sub = _hint("Live preview — type on the card, and click the game image to set what Discord shows.")
+        sub = _hint("Live preview. Type on the card, and click the game image to set what Discord shows.")
         body.addWidget(sub)
         body.addSpacing(4)
         body.addWidget(self._build_popout())
@@ -185,7 +185,7 @@ class ProfileEditor(QDialog):
         self._avatar = _AvatarDot(qt_utils.pil_to_pixmap(qt_utils.discord_avatar_pil(128)), 64, parent=card)
         self._avatar.move(14, 56 - 36)
         self._avatar.raise_()
-        self._avatar.setToolTip("Your Discord avatar — Rich Presence can't change this")
+        self._avatar.setToolTip("Your Discord avatar. Rich Presence cannot change this.")
         lay.addSpacing(42)
 
         content = QVBoxLayout()
@@ -267,7 +267,7 @@ class ProfileEditor(QDialog):
         browse.clicked.connect(self._pick_exe)
         exe_row.addWidget(browse)
         lay.addLayout(exe_row)
-        lay.addWidget(_hint("Pick the .exe or type its name — the profile activates while it runs."))
+        lay.addWidget(_hint("Pick the .exe or type its name. The profile activates while it runs."))
 
         self.exe_path = self.profile.get("exe_path", "")
 
@@ -298,7 +298,7 @@ class ProfileEditor(QDialog):
 
     def _build_images_section(self):
         panel, lay = self._section("IMAGES")
-        lay.addWidget(_label("Large image — asset key or URL", size=9, bold=True))
+        lay.addWidget(_label("Large image (asset key or URL)", size=9, bold=True))
         self.edit_large_key = _field(
             "Asset name from the dev portal, or an https:// image URL",
             self.profile.get("large_image_url") or self.profile.get("large_image_key") or "",
@@ -315,7 +315,7 @@ class ProfileEditor(QDialog):
         self.edit_large_text = _field("Hover text for the large image", self.profile.get("large_image_text", ""))
         lay.addWidget(self.edit_large_text)
 
-        lay.addWidget(_label("Small image — asset key or URL", size=9, bold=True))
+        lay.addWidget(_label("Small image (asset key or URL)", size=9, bold=True))
         self.edit_small_key = _field(
             "Optional corner badge image",
             self.profile.get("small_image_url") or self.profile.get("small_image_key") or "",
@@ -395,10 +395,10 @@ class ProfileEditor(QDialog):
     def _update_image_status(self):
         value = self.edit_large_key.text().strip()
         if value:
-            self._img_status.setText("✓  This image will show in Discord")
+            self._img_status.setText("This image will show in Discord.")
             self._img_status.setStyleSheet(f"color: {styles.SUCCESS};")
         elif self.large_image_path:
-            self._img_status.setText("⚠  Preview only — choose/search an image or paste a URL so Discord shows it")
+            self._img_status.setText("Preview only. Search or upload an image, or paste a URL so Discord shows it.")
             self._img_status.setStyleSheet(f"color: {styles.TEXT_MUTED};")
         else:
             self._img_status.setText("")
