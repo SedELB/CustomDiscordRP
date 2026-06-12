@@ -42,23 +42,31 @@ def _find_by_id(data, profile_id):
 def background_loop():
     global running
     import gui
+    active_key = None    # which profile is currently showing
+    active_since = None  # when this presence became active (not the app's launch time)
     while running:
         data = gui.get_data()  # re-read each pass so edits apply live
 
-        profile, start_time = process_monitor.find_active_profile(data.get('profiles', []))
+        profile, _proc_start = process_monitor.find_active_profile(data.get('profiles', []))
 
         # --launch override: activate the requested profile even before its exe is seen.
         if profile is None and forced_profile_id:
             forced = _find_by_id(data, forced_profile_id)
             if forced:
                 profile = forced
-                start_time = time.time()
 
         if profile:
+            # Elapsed counts from when the presence started showing, not from the
+            # underlying process launch (background apps can be running for hours).
+            key = profile.get('id') or profile.get('targetExe')
+            if key != active_key:
+                active_key = key
+                active_since = time.time()
+
             client_id = _client_id_for(profile, data)
             title = profile.get('profileTitle', 'Active')
             if rpc_manager.ensure_connected(client_id):
-                st = start_time if profile.get('show_elapsed', True) else None
+                st = active_since if profile.get('show_elapsed', True) else None
                 rpc_manager.update_from_profile(profile, st)
                 bridge.tray_state.emit('active', f"CustomRP — {title}")
                 bridge.activity.emit(title)
@@ -66,6 +74,8 @@ def background_loop():
                 bridge.tray_state.emit('error', "Discord not detected")
                 bridge.activity.emit(None)
         else:
+            active_key = None
+            active_since = None
             if rpc_manager.is_connected():
                 rpc_manager.clear_presence()
             bridge.tray_state.emit('idle', "CustomRP — idle")
