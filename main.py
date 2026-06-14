@@ -1,5 +1,6 @@
 import argparse
 import os
+import signal
 import sys
 import threading
 import time
@@ -134,8 +135,23 @@ def _set_base_dir():
         pass
 
 
+def _set_taskbar_identity():
+    # Detach from python.exe's identity so Windows groups CustomRP on its own and
+    # shows our window icon in the taskbar instead of the generic Python icon.
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("CustomRP.DiscordRichPresence")
+    except Exception:
+        pass
+
+
 def main():
     _set_base_dir()
+    _set_taskbar_identity()
+
+    # Ctrl+C in the terminal terminates cleanly instead of raising a Qt enum
+    # marshalling error while the event loop is torn down.
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
 
     args = _parse_args()
 
