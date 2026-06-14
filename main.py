@@ -18,7 +18,6 @@ POLL_SECONDS = 2
 
 running = False          # monitoring on/off (user toggle)
 app_alive = True         # background thread runs for the whole app lifetime
-forced_profile_id = None
 
 
 class Bridge(QObject):
@@ -35,13 +34,6 @@ def _client_id_for(profile, data):
     return profile.get('discord_app_id') or data.get('clientId') or DEFAULT_CLIENT_ID
 
 
-def _find_by_id(data, profile_id):
-    for profile in data.get('profiles', []):
-        if profile.get('id') == profile_id:
-            return profile
-    return None
-
-
 def background_loop():
     import gui
     active_key = None      # which profile is currently showing
@@ -55,12 +47,6 @@ def background_loop():
         if running:
             idle_cleared = False
             profile, _proc_start = process_monitor.find_active_profile(data.get('profiles', []))
-
-            # --launch override: activate the requested profile even before its exe is seen.
-            if profile is None and forced_profile_id:
-                forced = _find_by_id(data, forced_profile_id)
-                if forced:
-                    profile = forced
 
             if profile:
                 # Elapsed counts from when the presence started showing, not from the
@@ -130,8 +116,6 @@ def stop_monitoring():
 
 def _parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--profile", type=str, help="Profile ID to activate on launch")
-    parser.add_argument("--launch", action="store_true", help="Immediately activate profile and start monitoring")
     parser.add_argument("--startup", action="store_true", help="Start hidden in the tray with monitoring on")
     args, _unknown = parser.parse_known_args()
     return args
@@ -151,13 +135,9 @@ def _set_base_dir():
 
 
 def main():
-    global forced_profile_id
-
     _set_base_dir()
 
     args = _parse_args()
-    if args.profile:
-        forced_profile_id = args.profile
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
@@ -199,9 +179,9 @@ def main():
     # Background thread runs for the whole app lifetime (identity + monitoring).
     start_background()
 
-    if args.launch or args.startup:
-        # .bat wrapper (--launch) or Windows startup (--startup): begin monitoring
-        # immediately and stay hidden in the tray.
+    if args.startup:
+        # Windows startup (--startup): begin monitoring immediately and stay
+        # hidden in the tray.
         start_monitoring()
         window.update_power_visual(True)
     else:

@@ -6,13 +6,12 @@ from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF
 from PyQt6.QtGui import QPixmap, QCursor, QPainter, QPen, QFont, QColor, QBrush
 from PyQt6.QtWidgets import (
     QDialog, QWidget, QFrame, QLabel, QPushButton, QLineEdit, QFileDialog,
-    QVBoxLayout, QHBoxLayout, QScrollArea, QMessageBox,
+    QVBoxLayout, QHBoxLayout,
 )
 import styles
 import qt_utils
 import qt_net
 import image_picker
-import launcher_inject
 
 MAX_FIELD = 128
 
@@ -420,12 +419,6 @@ class ProfileEditor(QDialog):
         lay.addWidget(_hint("Pick the .exe or type its name. The profile activates while it runs."))
 
         self.exe_path = self.profile.get("exe_path", "")
-
-        bat = QPushButton("Create .bat launcher")
-        bat.setProperty("kind", "outline")
-        bat.clicked.connect(self._create_launcher)
-        lay.addWidget(bat)
-        lay.addWidget(_hint("Generates a .bat next to the .exe that activates this profile, then launches the app."))
         return panel
 
     def _build_discord_section(self):
@@ -606,17 +599,6 @@ class ProfileEditor(QDialog):
             return
         self.exe_path = path
         self.edit_exe.setText(os.path.basename(path))
-
-    def _create_launcher(self):
-        profile = {"id": self.profile["id"], "exe_path": self.exe_path}
-        bat_path, error = launcher_inject.make_bat_launcher(profile)
-        if error:
-            QMessageBox.warning(self, "Launcher", error)
-            return
-        QMessageBox.information(
-            self, "Launcher created",
-            f"Created:\n{bat_path}\n\nRun this .bat instead of the .exe directly, or pin it to your taskbar.",
-        )
 
     # URL → live preview on the card
     def _schedule_url_preview(self):

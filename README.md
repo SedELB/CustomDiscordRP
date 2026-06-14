@@ -116,10 +116,6 @@ Turn on Run on startup in the sidebar. CustomRP will then launch into the tray a
 
 To turn this off, switch Run on startup back off.
 
-## Optional: per app .bat launcher
-
-If you prefer not to keep CustomRP running all the time, open a profile and click Create .bat launcher. This writes a file named `AppName_rp_launcher.bat` next to the executable. Running that .bat starts CustomRP with the profile active and then starts the application. You would run the .bat instead of the .exe, or pin it to your taskbar. For most people the Run on startup option is simpler.
-
 ## How it works
 
 - main.py starts the tray icon, the window, and the process monitor.
