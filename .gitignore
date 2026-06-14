@@ -1,3 +1,6 @@
 *.md
 !README.md
 *.pyc
+*.ottotime
+!config.json
+

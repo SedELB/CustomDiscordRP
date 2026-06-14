@@ -363,6 +363,16 @@ class ProfileEditor(QDialog):
         return bar
 
     # --- behaviour -----------------------------------------------------------
+    def keyPressEvent(self, event):
+        # Prevent QDialog from treating Enter/Return as an implicit Accept, which
+        # would close the dialog without saving. Only the Save button should save.
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            focused = self.focusWidget()
+            if isinstance(focused, QLineEdit):
+                focused.clearFocus()
+                return
+        super().keyPressEvent(event)
+
     def showEvent(self, event):
         super().showEvent(event)
         if not self._opened:
