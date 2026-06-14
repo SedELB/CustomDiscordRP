@@ -1,0 +1,43 @@
+{
+    "clientId": "1482109796915220491",
+    "profiles": [
+        {
+            "id": "8df5c322-dd61-4b63-bde8-a7244d7c214d",
+            "profileTitle": "SolidWorks",
+            "targetExe": "Medal.exe",
+            "exe_path": "C:/Users/rkiae/AppData/Local/Medal/app-4.3253.0/Medal.exe",
+            "discord_app_id": "1482109796915220491",
+            "statusName": "SolidWorks",
+            "details": "Editing CAD file",
+            "state": "",
+            "large_image_text": "SolidWorks Tooltip !",
+            "small_image_text": "",
+            "large_image_key": null,
+            "large_image_url": "https://files.catbox.moe/jn6fks.png",
+            "small_image_key": null,
+            "small_image_url": null,
+            "large_image_path": "assets\\profile_images\\8df5c322-dd61-4b63-bde8-a7244d7c214d.png",
+            "show_elapsed": true,
+            "enabled": true
+        },
+        {
+            "id": "feb8cfd1-675f-456f-a044-ed42d421c7e1",
+            "profileTitle": "Steam",
+            "targetExe": "steam.exe",
+            "exe_path": "C:/Program Files (x86)/Steam/steam.exe",
+            "discord_app_id": "",
+            "statusName": "Steam",
+            "details": "Browsing the marketplace",
+            "state": "",
+            "large_image_text": "",
+            "small_image_text": "",
+            "large_image_key": null,
+            "large_image_url": "https://files.catbox.moe/t1jmye.png",
+            "small_image_key": null,
+            "small_image_url": null,
+            "large_image_path": "assets\\profile_images\\feb8cfd1-675f-456f-a044-ed42d421c7e1.png",
+            "show_elapsed": true,
+            "enabled": true
+        }
+    ]
+}

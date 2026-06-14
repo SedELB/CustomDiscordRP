@@ -255,7 +255,7 @@ class Switch(QWidget):
     def paintEvent(self, _event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        track_off = QColor(styles.BORDER)
+        track_off = QColor(styles.TOGGLE_OFF)
         track_on = QColor(styles.SUCCESS)
         track = QColor(
             int(track_off.red() + (track_on.red() - track_off.red()) * self._pos),

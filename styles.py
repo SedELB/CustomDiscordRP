@@ -2,22 +2,32 @@
 
 # Color tokens (from CLAUDE.md spec)
 BG_PRIMARY    = "#313338"   # main window background
-BG_SECONDARY  = "#2b2d31"   # sidebar / panels
-BG_TERTIARY   = "#1e1f22"   # input fields, cards
+BG_SECONDARY  = "#2b2d31"   # panels
+BG_TERTIARY   = "#1e1f22"   # input fields, titlebar, deep cards
+BG_TITLEBAR   = "#1e1f22"   # custom titlebar background
+BG_STATUSBAR  = "#232428"   # bottom statusbar surface
 ACCENT        = "#5865f2"   # Discord blurple — buttons, active states
 ACCENT_HOVER  = "#4752c4"
 ACCENT_DOWN   = "#3c45a5"
-TEXT_PRIMARY  = "#f2f3f5"
-TEXT_MUTED    = "#949ba4"
+TEXT_HEADING  = "#f2f3f5"   # headings, profile names
+TEXT_PRIMARY  = "#f2f3f5"   # primary text
+TEXT_MUTED    = "#949ba4"   # secondary text, labels, placeholders
+TEXT_FAINT    = "#4e5058"   # small labels / version
 TEXT_LINK     = "#00b0f4"
-DANGER        = "#ed4245"
-DANGER_HOVER  = "#c93b3e"
+ICON_DEFAULT  = "#b5bac1"   # default icon color
+ICON_MUTED    = "#4e5058"   # disabled / muted icon
+DANGER        = "#da373c"
+DANGER_HOVER  = "#b32d30"
 SUCCESS       = "#23a55a"
-SUCCESS_HOVER = "#1d8e4d"
+SUCCESS_HOVER = "#1a9050"
+TOGGLE_OFF    = "#4e5058"   # toggle switch OFF track
+DOT_ONLINE    = "#23a55a"
+DOT_IDLE      = "#f0b232"
+DOT_OFFLINE   = "#80848e"
 BORDER        = "#3f4147"
 CARD_BG       = "#232428"   # presence preview card background
 ROW_BG        = "#2b2d31"   # profile list row
-ROW_HOVER     = "#35373d"
+ROW_HOVER     = "#3f4147"
 
 FONT_FAMILY = "Segoe UI"    # Whitney/gg sans are rarely installed; Segoe is the Windows fallback
 
@@ -73,18 +83,19 @@ QLineEdit[cardEdit="true"]:focus {{
 }}
 
 QLineEdit#search {{
-    border-radius: 15px;
-    padding: 6px 14px;
+    border-radius: 4px;
+    padding: 7px 12px;
     background: {BG_TERTIARY};
     border: 1px solid {BG_TERTIARY};
 }}
 QLineEdit#search:focus {{
-    border: 1px solid {ACCENT};
+    background: #111214;
+    border: 1px solid {BG_TERTIARY};
 }}
 
 QPushButton {{
     background: {ACCENT};
-    border: none;
+    border: 1px solid {ACCENT_DOWN};
     border-radius: 4px;
     padding: 9px 16px;
     font-weight: 600;
@@ -92,12 +103,13 @@ QPushButton {{
 }}
 QPushButton:hover {{ background: {ACCENT_HOVER}; }}
 QPushButton:pressed {{ background: {ACCENT_DOWN}; }}
-QPushButton:disabled {{ background: {BORDER}; color: {TEXT_MUTED}; }}
+QPushButton:disabled {{ background: {BORDER}; border-color: {BORDER}; color: {TEXT_MUTED}; }}
 QPushButton[compact="true"] {{ padding: 5px 14px; font-weight: 600; }}
 
 QPushButton[kind="ghost"] {{
     background: transparent;
     color: {TEXT_MUTED};
+    border: 1px solid {BORDER};
     font-weight: 500;
 }}
 QPushButton[kind="ghost"]:hover {{
@@ -116,14 +128,15 @@ QPushButton[kind="outline"]:hover {{
 QPushButton[kind="danger-ghost"] {{
     background: transparent;
     color: {DANGER};
+    border: 1px solid {DANGER};
     font-weight: 500;
 }}
 QPushButton[kind="danger-ghost"]:hover {{
-    background: rgba(237, 66, 69, 0.12);
+    background: rgba(218, 55, 60, 0.14);
 }}
-QPushButton[kind="success"] {{ background: {SUCCESS}; }}
+QPushButton[kind="success"] {{ background: {SUCCESS}; border: 1px solid {SUCCESS_HOVER}; }}
 QPushButton[kind="success"]:hover {{ background: {SUCCESS_HOVER}; }}
-QPushButton[kind="danger"] {{ background: {DANGER}; }}
+QPushButton[kind="danger"] {{ background: {DANGER}; border: 1px solid {DANGER_HOVER}; }}
 QPushButton[kind="danger"]:hover {{ background: {DANGER_HOVER}; }}
 
 QScrollArea {{ border: none; background: transparent; }}
@@ -190,8 +203,35 @@ QPushButton[kind="thumb"] {{
 QPushButton[kind="thumb"]:hover {{ border: 2px solid {BORDER}; }}
 QPushButton[kind="thumb"]:checked {{ border: 2px solid {ACCENT}; }}
 
+/* --- custom window chrome ------------------------------------------------ */
+#titlebar {{ background: {BG_TITLEBAR}; }}
+#titlebar QLabel {{ color: {TEXT_MUTED}; }}
+
+/* Min / maximize window buttons */
+QPushButton[kind="win"] {{
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    color: {ICON_DEFAULT};
+    padding: 0;
+}}
+QPushButton[kind="win"]:hover {{ background: #36373d; color: {TEXT_HEADING}; }}
+QPushButton[kind="win"]:pressed {{ background: #2f3035; }}
+/* Close button — red on hover, Discord style */
+QPushButton[kind="winClose"] {{
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    color: {ICON_DEFAULT};
+    padding: 0;
+}}
+QPushButton[kind="winClose"]:hover {{ background: #c03537; color: #ffffff; }}
+QPushButton[kind="winClose"]:pressed {{ background: #a32b2d; color: #ffffff; }}
+
+#statusBar {{ background: {BG_STATUSBAR}; border-top: 1px solid {BG_TITLEBAR}; }}
+#statusBar QLabel[role="statusText"] {{ color: {TEXT_HEADING}; font-weight: 600; }}
+
 /* Named containers */
-#sidebar {{ background: {BG_SECONDARY}; }}
 #panel {{ background: {BG_SECONDARY}; border-radius: 8px; }}
 #darkPanel {{ background: {BG_TERTIARY}; border-radius: 8px; }}
 #presenceCard {{ background: {CARD_BG}; border-radius: 8px; }}
@@ -200,9 +240,10 @@ QPushButton[kind="thumb"]:checked {{ border: 2px solid {ACCENT}; }}
 #countChip {{
     background: {BG_TERTIARY};
     color: {TEXT_MUTED};
-    border-radius: 10px;
-    padding: 2px 10px;
+    border: 1px solid {BORDER};
+    border-radius: 4px;
+    padding: 1px 8px;
     font-size: 9pt;
-    font-weight: 600;
+    font-weight: 700;
 }}
 """

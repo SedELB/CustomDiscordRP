@@ -3,12 +3,13 @@ import os
 from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont, QCursor
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QFrame, QLabel, QPushButton, QLineEdit,
+    QApplication, QMainWindow, QWidget, QFrame, QLabel, QPushButton, QLineEdit,
     QVBoxLayout, QHBoxLayout, QMessageBox, QGraphicsOpacityEffect,
 )
 import styles
 import qt_utils
 import startup
+import chrome
 import profile_editor
 
 app_data = {
@@ -68,11 +69,13 @@ class ProfileRow(qt_utils.HoverColorMixin, QFrame):
         lay.addWidget(avatar)
 
         text_col = QVBoxLayout()
-        text_col.setSpacing(2)
+        text_col.setSpacing(0)
+        text_col.addStretch()
         title = _mono_label(profile.get("profileTitle", "Untitled"), size=11, bold=True)
         text_col.addWidget(title)
         subtitle = _mono_label(self._subtitle(), size=9, muted=True)
         text_col.addWidget(subtitle)
+        text_col.addStretch()
         lay.addLayout(text_col, stretch=1)
 
         self.switch = qt_utils.Switch(profile.get("enabled", True), self, on_change=self._toggle)
@@ -135,119 +138,77 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("CustomRP")
         self.setWindowIcon(qt_utils.app_icon())
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.resize(960, 640)
-        self.setMinimumSize(840, 540)
+        self.setMinimumSize(720, 480)
         self._editors = []
+        self._maximized = False
+        self._normal_geometry = None
 
         central = QWidget()
         self.setCentralWidget(central)
-        root = QHBoxLayout(central)
+        root = QVBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        root.addWidget(self._build_sidebar())
+        self.titlebar = chrome.TitleBar(self)
+        root.addWidget(self.titlebar)
         root.addWidget(self._build_content(), stretch=1)
+
+        self.statusbar = chrome.StatusBar(self._on_startup_toggle, startup.is_enabled())
+        root.addWidget(self.statusbar)
+
+        # expose the controls main.py and the rest of the app expect
+        self.power_button = self.statusbar.power_button
+        self.status_label = self.statusbar.status_label
+        self.status_detail = self.statusbar.status_detail
+        self.startup_switch = self.statusbar.startup_switch
+        self.pulse = self.statusbar.pulse
+
+        self._grips = chrome.ResizeGrips(self)
 
         self.refresh_profiles()
         self.update_power_visual(False)
-
-    # --- sidebar -------------------------------------------------------------
-    def _build_sidebar(self):
-        sidebar = QFrame()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(240)
-        lay = QVBoxLayout(sidebar)
-        lay.setContentsMargins(16, 20, 16, 14)
-        lay.setSpacing(0)
-
-        brand_row = QHBoxLayout()
-        logo = QLabel()
-        logo.setPixmap(qt_utils.logo_pixmap(28))
-        logo.setFixedSize(28, 28)
-        brand_row.addWidget(logo)
-        brand = _mono_label("CustomRP", size=13, bold=True)
-        brand_row.addWidget(brand)
-        brand_row.addStretch()
-        lay.addLayout(brand_row)
-
-        tagline = _mono_label("Per-app Rich Presence", size=8, muted=True)
-        lay.addSpacing(2)
-        lay.addWidget(tagline)
-        lay.addSpacing(18)
-
-        new_btn = QPushButton("+  New Profile")
-        new_btn.setFixedHeight(40)
-        new_btn.clicked.connect(lambda: self.open_editor(None))
-        lay.addWidget(new_btn)
-
-        lay.addStretch()
-
-        # Run-on-startup toggle
-        startup_row = QHBoxLayout()
-        startup_row.setContentsMargins(4, 0, 4, 0)
-        startup_lbl = _mono_label("Run on startup", size=9)
-        startup_lbl.setToolTip("Launch CustomRP in the tray when Windows starts, so your apps are detected automatically")
-        startup_row.addWidget(startup_lbl)
-        startup_row.addStretch()
-        self.startup_switch = qt_utils.Switch(startup.is_enabled(), on_change=self._on_startup_toggle)
-        self.startup_switch.setToolTip("Launch CustomRP automatically when Windows starts")
-        startup_row.addWidget(self.startup_switch)
-        lay.addLayout(startup_row)
-        lay.addSpacing(12)
-
-        panel = QFrame()
-        panel.setObjectName("darkPanel")
-        panel_lay = QVBoxLayout(panel)
-        panel_lay.setContentsMargins(14, 12, 14, 12)
-        panel_lay.setSpacing(4)
-
-        status_row = QHBoxLayout()
-        self.status_dot = _mono_label("●", size=9)
-        status_row.addWidget(self.status_dot)
-        self.status_label = _mono_label("Stopped", size=10, bold=True)
-        status_row.addWidget(self.status_label)
-        status_row.addStretch()
-        panel_lay.addLayout(status_row)
-
-        self.status_detail = _mono_label("Monitoring is off", size=8, muted=True)
-        self.status_detail.setWordWrap(True)
-        panel_lay.addWidget(self.status_detail)
-        panel_lay.addSpacing(6)
-
-        self.power_button = QPushButton("Start monitoring")
-        self.power_button.setProperty("kind", "success")
-        self.power_button.setFixedHeight(36)
-        panel_lay.addWidget(self.power_button)
-
-        lay.addWidget(panel)
-        version = _mono_label("CustomRP  ·  v2.0", size=8, muted=True)
-        version.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        lay.addSpacing(8)
-        lay.addWidget(version)
-        return sidebar
 
     # --- content -------------------------------------------------------------
     def _build_content(self):
         content = QWidget()
         lay = QVBoxLayout(content)
-        lay.setContentsMargins(28, 22, 28, 20)
-        lay.setSpacing(14)
+        lay.setContentsMargins(32, 22, 32, 18)
+        lay.setSpacing(16)
 
+        # Heading: title + count badge, with subtitle tucked directly beneath
+        head_col = QVBoxLayout()
+        head_col.setSpacing(2)
         header = QHBoxLayout()
-        header.addWidget(_mono_label("Your Profiles", size=14, bold=True))
+        header.setSpacing(10)
+        header.addWidget(_mono_label("Your profiles", size=15, bold=True))
         self.count_chip = QLabel("0")
         self.count_chip.setObjectName("countChip")
-        header.addWidget(self.count_chip)
+        header.addWidget(self.count_chip, alignment=Qt.AlignmentFlag.AlignVCenter)
         header.addStretch()
+        head_col.addLayout(header)
+        head_col.addWidget(_mono_label("Manage your Rich Presence profiles per app", size=9, muted=True))
+        lay.addLayout(head_col)
 
+        # Toolbar: search (flex) + new profile
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(12)
         self.search = QLineEdit()
         self.search.setObjectName("search")
         self.search.setPlaceholderText("Search profiles…")
-        self.search.setFixedWidth(230)
         self.search.setClearButtonEnabled(True)
+        self.search.setFixedHeight(36)
         self.search.textChanged.connect(lambda _t: self.refresh_profiles(animate=False))
-        header.addWidget(self.search)
-        lay.addLayout(header)
+        toolbar.addWidget(self.search, stretch=1)
+
+        new_btn = QPushButton("+  New profile")
+        new_btn.setFixedHeight(36)
+        new_btn.setMinimumWidth(140)
+        new_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        new_btn.clicked.connect(lambda: self.open_editor(None))
+        toolbar.addWidget(new_btn)
+        lay.addLayout(toolbar)
 
         scroll = qt_utils.SmoothScrollArea()
         scroll.setWidgetResizable(True)
@@ -259,6 +220,45 @@ class MainWindow(QMainWindow):
         scroll.setWidget(self.list_host)
         lay.addWidget(scroll, stretch=1)
         return content
+
+    # --- frameless window controls -------------------------------------------
+    def is_maximized(self):
+        return self._maximized
+
+    def toggle_max_restore(self):
+        if self._maximized:
+            self._maximized = False
+            if self._normal_geometry is not None:
+                self.setGeometry(self._normal_geometry)
+        else:
+            self._normal_geometry = self.geometry()
+            self._maximized = True
+            screen = self.screen() or QApplication.primaryScreen()
+            if screen is not None:
+                self.setGeometry(screen.availableGeometry())
+        self.titlebar.set_maximized(self._maximized)
+        self._grips.set_visible(not self._maximized)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_grips"):
+            self._grips.reposition()
+
+    def _apply_win11_corners(self):
+        # Best-effort: ask DWM to round the window corners on Windows 11.
+        try:
+            import ctypes
+            from ctypes import wintypes
+            hwnd = int(self.winId())
+            DWMWA_WINDOW_CORNER_PREFERENCE = 33
+            DWMWCP_ROUND = 2
+            value = ctypes.c_int(DWMWCP_ROUND)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                wintypes.HWND(hwnd), DWMWA_WINDOW_CORNER_PREFERENCE,
+                ctypes.byref(value), ctypes.sizeof(value),
+            )
+        except Exception:
+            pass
 
     # --- profile list --------------------------------------------------------
     def refresh_profiles(self, animate=True):
@@ -294,7 +294,7 @@ class MainWindow(QMainWindow):
                 empty_lay.addSpacing(10)
                 btn_row = QHBoxLayout()
                 btn_row.addStretch()
-                btn = QPushButton("+  New Profile")
+                btn = QPushButton("+  New profile")
                 btn.setFixedSize(170, 40)
                 btn.clicked.connect(lambda: self.open_editor(None))
                 btn_row.addWidget(btn)
@@ -348,14 +348,14 @@ class MainWindow(QMainWindow):
             self.power_button.setText("Stop monitoring")
             self.power_button.setProperty("kind", "danger")
             self.status_label.setText("Idle")
-            self.status_dot.setStyleSheet(f"color: {styles.ACCENT};")
             self.status_detail.setText("Watching for profiled apps…")
+            self.pulse.set_state("idle")
         else:
             self.power_button.setText("Start monitoring")
             self.power_button.setProperty("kind", "success")
             self.status_label.setText("Stopped")
-            self.status_dot.setStyleSheet(f"color: {styles.TEXT_MUTED};")
             self.status_detail.setText("Monitoring is off")
+            self.pulse.set_state("off")
         self.power_button.style().unpolish(self.power_button)
         self.power_button.style().polish(self.power_button)
 
@@ -368,17 +368,19 @@ class MainWindow(QMainWindow):
     def report_activity(self, title):
         if title:
             self.status_label.setText("Active")
-            self.status_dot.setStyleSheet(f"color: {styles.SUCCESS};")
             self.status_detail.setText(title)
+            self.pulse.set_state("active")
         else:
             if self.status_label.text() != "Stopped":
                 self.status_label.setText("Idle")
-                self.status_dot.setStyleSheet(f"color: {styles.ACCENT};")
                 self.status_detail.setText("Watching for profiled apps…")
+                self.pulse.set_state("idle")
 
     # --- window behaviour ----------------------------------------------------
     def showEvent(self, event):
         super().showEvent(event)
+        self._apply_win11_corners()
+        self._grips.reposition()
         qt_utils.animate_open(self)
 
     def closeEvent(self, event):

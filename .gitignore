@@ -4,4 +4,6 @@
 *.ottotime
 *.json
 !config.json
+*.png
+*.jpg
 
