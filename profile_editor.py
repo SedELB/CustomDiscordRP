@@ -307,7 +307,7 @@ class ProfileEditor(QDialog):
         self.edit_large_key.textChanged.connect(self._update_image_status)
         lay.addWidget(self.edit_large_key)
         lay.addWidget(_hint(
-            "This is what Discord actually displays. Click the card image to search a logo "
+            "The main artwork shown in your status. Click the card image above to search a logo "
             "or upload one (auto-hosted), or paste an asset key / public image URL here."
         ))
 
@@ -321,6 +321,10 @@ class ProfileEditor(QDialog):
             self.profile.get("small_image_url") or self.profile.get("small_image_key") or "",
         )
         lay.addWidget(self.edit_small_key)
+        lay.addWidget(_hint(
+            "A small badge overlaid on the bottom-right corner of the large image. "
+            "Useful for showing a game mode, server icon, or status badge."
+        ))
 
         lay.addWidget(_label("Small image tooltip", size=9, bold=True))
         self.edit_small_text = _field("Hover text for the small image", self.profile.get("small_image_text", ""))
@@ -336,13 +340,6 @@ class ProfileEditor(QDialog):
         self.switch_elapsed = qt_utils.Switch(self.profile.get("show_elapsed", True), on_change=self._elapsed_toggled)
         row1.addWidget(self.switch_elapsed)
         lay.addLayout(row1)
-
-        row2 = QHBoxLayout()
-        row2.addWidget(_label("Enable profile", size=9))
-        row2.addStretch()
-        self.switch_enabled = qt_utils.Switch(self.profile.get("enabled", True))
-        row2.addWidget(self.switch_enabled)
-        lay.addLayout(row2)
         return panel
 
     def _build_bottom_bar(self):
@@ -499,7 +496,8 @@ class ProfileEditor(QDialog):
         p["small_image_key"], p["small_image_url"] = self._split_key_or_url(self.edit_small_key.text())
         p["large_image_path"] = self.large_image_path
         p["show_elapsed"] = self.switch_elapsed.isChecked()
-        p["enabled"] = self.switch_enabled.isChecked()
+        if "enabled" not in p:
+            p["enabled"] = True
 
         self.on_save(p, self.is_new)
         self.close()
