@@ -316,13 +316,15 @@ class ProfileEditor(QDialog):
         )
         lay.addWidget(banner)
 
-        # Generic Discord account avatar over the banner edge. This represents
-        # your Discord profile picture, which Rich Presence can't change — only
-        # the activity image below is editable.
-        self._avatar = _AvatarDot(qt_utils.pil_to_pixmap(qt_utils.discord_avatar_pil(128)), 64, parent=card)
+        # Your real Discord account avatar (fetched live over RPC) sits over the
+        # banner edge. Rich Presence can't *change* it — only the activity image
+        # below is editable — but we show the real one as a read-only preview.
+        cached = getattr(self.parent(), "discord_avatar_pixmap", None)
+        avatar_pm = cached if cached is not None else qt_utils.pil_to_pixmap(qt_utils.discord_avatar_pil(128))
+        self._avatar = _AvatarDot(avatar_pm, 64, parent=card)
         self._avatar.move(14, 56 - 36)
         self._avatar.raise_()
-        self._avatar.setToolTip("Your Discord avatar. Rich Presence cannot change this.")
+        self._avatar.setToolTip(self._avatar_tooltip(getattr(self.parent(), "discord_username", None)))
         lay.addSpacing(42)
 
         content = QVBoxLayout()
@@ -379,6 +381,17 @@ class ProfileEditor(QDialog):
         row.setContentsMargins(0, 0, 0, 0)
         row.addWidget(widget)
         return row
+
+    @staticmethod
+    def _avatar_tooltip(username):
+        if username:
+            return f"{username} — your Discord avatar (Rich Presence can't change it)"
+        return "Your Discord avatar. Rich Presence cannot change this."
+
+    def apply_discord_avatar(self, pixmap, username):
+        # Called by the main window when the live Discord avatar arrives/changes.
+        self._avatar.setPixmap(pixmap)
+        self._avatar.setToolTip(self._avatar_tooltip(username))
 
     def _section(self, title):
         panel = QFrame()

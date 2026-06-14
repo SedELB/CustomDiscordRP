@@ -204,7 +204,7 @@ class PulseDot(QWidget):
 
 # --- bottom statusbar --------------------------------------------------------
 class StatusBar(QFrame):
-    def __init__(self, on_startup_toggle, startup_enabled, version="v3.0"):
+    def __init__(self, on_startup_toggle, startup_enabled, version="v3.1.0"):
         super().__init__()
         self.setObjectName("statusBar")
         self.setFixedHeight(56)

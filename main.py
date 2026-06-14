@@ -16,7 +16,8 @@ import process_monitor
 DEFAULT_CLIENT_ID = "1482109796915220491"
 POLL_SECONDS = 2
 
-running = False
+running = False          # monitoring on/off (user toggle)
+app_alive = True         # background thread runs for the whole app lifetime
 forced_profile_id = None
 
 
@@ -24,6 +25,7 @@ class Bridge(QObject):
     # Thread-safe channel from the monitor thread into the UI.
     activity = pyqtSignal(object)        # profile title or None
     tray_state = pyqtSignal(str, str)    # state, tooltip
+    identity = pyqtSignal(bool, object)  # connected?, Discord user dict or None
 
 
 bridge = Bridge()
@@ -41,59 +43,83 @@ def _find_by_id(data, profile_id):
 
 
 def background_loop():
-    global running
     import gui
-    active_key = None    # which profile is currently showing
-    active_since = None  # when this presence became active (not the app's launch time)
-    while running:
+    active_key = None      # which profile is currently showing
+    active_since = None    # when this presence became active (not the app's launch time)
+    last_identity = "init"  # (connected, user_id) — emit to the UI only on change
+    idle_cleared = False   # whether we've cleared presence on the idle connection
+
+    while app_alive:
         data = gui.get_data()  # re-read each pass so edits apply live
 
-        profile, _proc_start = process_monitor.find_active_profile(data.get('profiles', []))
+        if running:
+            idle_cleared = False
+            profile, _proc_start = process_monitor.find_active_profile(data.get('profiles', []))
 
-        # --launch override: activate the requested profile even before its exe is seen.
-        if profile is None and forced_profile_id:
-            forced = _find_by_id(data, forced_profile_id)
-            if forced:
-                profile = forced
+            # --launch override: activate the requested profile even before its exe is seen.
+            if profile is None and forced_profile_id:
+                forced = _find_by_id(data, forced_profile_id)
+                if forced:
+                    profile = forced
 
-        if profile:
-            # Elapsed counts from when the presence started showing, not from the
-            # underlying process launch (background apps can be running for hours).
-            key = profile.get('id') or profile.get('targetExe')
-            if key != active_key:
-                active_key = key
-                active_since = time.time()
+            if profile:
+                # Elapsed counts from when the presence started showing, not from the
+                # underlying process launch (background apps can be running for hours).
+                key = profile.get('id') or profile.get('targetExe')
+                if key != active_key:
+                    active_key = key
+                    active_since = time.time()
 
-            client_id = _client_id_for(profile, data)
-            title = profile.get('profileTitle', 'Active')
-            if rpc_manager.ensure_connected(client_id):
-                st = active_since if profile.get('show_elapsed', True) else None
-                rpc_manager.update_from_profile(profile, st)
-                bridge.tray_state.emit('active', f"CustomRP — {title}")
-                bridge.activity.emit(title)
+                client_id = _client_id_for(profile, data)
+                title = profile.get('profileTitle', 'Active')
+                if rpc_manager.ensure_connected(client_id):
+                    st = active_since if profile.get('show_elapsed', True) else None
+                    rpc_manager.update_from_profile(profile, st)
+                    bridge.tray_state.emit('active', f"CustomRP — {title}")
+                    bridge.activity.emit(title)
+                else:
+                    bridge.tray_state.emit('error', "Discord not detected")
+                    bridge.activity.emit(None)
             else:
-                bridge.tray_state.emit('error', "Discord not detected")
+                active_key = None
+                active_since = None
+                if rpc_manager.is_connected():
+                    rpc_manager.clear_presence()
+                bridge.tray_state.emit('idle', "CustomRP — idle")
                 bridge.activity.emit(None)
         else:
+            # Not monitoring: keep a light identity connection so the main menu can
+            # show who's signed in to Discord. We never push an activity here.
             active_key = None
             active_since = None
-            if rpc_manager.is_connected():
-                rpc_manager.clear_presence()
-            bridge.tray_state.emit('idle', "CustomRP — idle")
-            bridge.activity.emit(None)
+            client_id = data.get('clientId') or DEFAULT_CLIENT_ID
+            if rpc_manager.ensure_connected(client_id):
+                if not idle_cleared:
+                    rpc_manager.clear_presence()
+                    idle_cleared = True
+            else:
+                idle_cleared = False
+
+        # Report identity (connection state + user) to the UI when it changes.
+        connected = rpc_manager.is_connected()
+        user = rpc_manager.get_user()
+        identity = (connected, (user or {}).get('id'))
+        if identity != last_identity:
+            last_identity = identity
+            bridge.identity.emit(connected, user)
 
         time.sleep(POLL_SECONDS)
 
     rpc_manager.clear_presence()
-    bridge.tray_state.emit('idle', "CustomRP — stopped")
+
+
+def start_background():
+    threading.Thread(target=background_loop, daemon=True).start()
 
 
 def start_monitoring():
     global running
-    if running:
-        return
     running = True
-    threading.Thread(target=background_loop, daemon=True).start()
 
 
 def stop_monitoring():
@@ -149,6 +175,8 @@ def main():
     window = gui.MainWindow()
 
     def quit_app():
+        global app_alive
+        app_alive = False
         stop_monitoring()
         rpc_manager.disconnect()
         app.quit()
@@ -166,6 +194,10 @@ def main():
     window.power_button.clicked.connect(toggle_power)
     bridge.activity.connect(window.report_activity)
     bridge.tray_state.connect(tray.set_state)
+    bridge.identity.connect(window.report_identity)
+
+    # Background thread runs for the whole app lifetime (identity + monitoring).
+    start_background()
 
     if args.launch or args.startup:
         # .bat wrapper (--launch) or Windows startup (--startup): begin monitoring

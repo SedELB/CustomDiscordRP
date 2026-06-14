@@ -1,5 +1,7 @@
+import io
 import json
 import os
+from PIL import Image
 from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont, QCursor
 from PyQt6.QtWidgets import (
@@ -8,8 +10,10 @@ from PyQt6.QtWidgets import (
 )
 import styles
 import qt_utils
+import qt_net
 import startup
 import chrome
+import discord_user
 import profile_editor
 
 app_data = {
@@ -133,6 +137,46 @@ class ProfileRow(qt_utils.HoverColorMixin, QFrame):
         super().mouseReleaseEvent(event)
 
 
+class IdentityView(QFrame):
+    # Avatar + username + connection status for the logged-in Discord account.
+    def __init__(self):
+        super().__init__()
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(10)
+
+        col = QVBoxLayout()
+        col.setSpacing(0)
+        col.addStretch()
+        self.name_lbl = _mono_label("Not connected", size=10, bold=True)
+        self.name_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.status_lbl = _mono_label("Disconnected from Discord", size=8, muted=True)
+        self.status_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        col.addWidget(self.name_lbl)
+        col.addWidget(self.status_lbl)
+        col.addStretch()
+        lay.addLayout(col)
+
+        self.avatar = QLabel()
+        self.avatar.setFixedSize(34, 34)
+        self._generic = qt_utils.crisp_from_pil(qt_utils.discord_avatar_pil(120), 34, radius=17)
+        self.avatar.setPixmap(self._generic)
+        lay.addWidget(self.avatar, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+    def set_identity(self, connected, name):
+        if connected:
+            self.name_lbl.setText(name or "Discord user")
+            self.status_lbl.setText("Connected to Discord")
+            self.status_lbl.setStyleSheet(f"color: {styles.SUCCESS};")
+        else:
+            self.name_lbl.setText(name or "Not connected")
+            self.status_lbl.setText("Disconnected from Discord")
+            self.status_lbl.setStyleSheet(f"color: {styles.TEXT_MUTED};")
+
+    def set_avatar(self, pixmap):
+        self.avatar.setPixmap(pixmap)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -144,6 +188,11 @@ class MainWindow(QMainWindow):
         self._editors = []
         self._maximized = False
         self._normal_geometry = None
+        self._net = qt_net.Net(self)
+        self._discord_user = None
+        self._avatar_url = None
+        self.discord_avatar_pixmap = None   # raw square avatar QPixmap (for editors)
+        self.discord_username = None
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -177,7 +226,10 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(32, 22, 32, 18)
         lay.setSpacing(16)
 
-        # Heading: title + count badge, with subtitle tucked directly beneath
+        # Heading: title + count badge (subtitle beneath) on the left,
+        # the Discord identity on the right.
+        top = QHBoxLayout()
+        top.setSpacing(12)
         head_col = QVBoxLayout()
         head_col.setSpacing(2)
         header = QHBoxLayout()
@@ -189,7 +241,10 @@ class MainWindow(QMainWindow):
         header.addStretch()
         head_col.addLayout(header)
         head_col.addWidget(_mono_label("Manage your Rich Presence profiles per app", size=9, muted=True))
-        lay.addLayout(head_col)
+        top.addLayout(head_col, stretch=1)
+        self.identity_view = IdentityView()
+        top.addWidget(self.identity_view, alignment=Qt.AlignmentFlag.AlignVCenter)
+        lay.addLayout(top)
 
         # Toolbar: search (flex) + new profile
         toolbar = QHBoxLayout()
@@ -375,6 +430,32 @@ class MainWindow(QMainWindow):
                 self.status_label.setText("Idle")
                 self.status_detail.setText("Watching for profiled apps…")
                 self.pulse.set_state("idle")
+
+    # --- discord identity ----------------------------------------------------
+    def report_identity(self, connected, user):
+        if connected and user:
+            self._discord_user = user
+            self.discord_username = discord_user.display_name(user)
+        self.identity_view.set_identity(connected, self.discord_username)
+        if connected and user:
+            url = discord_user.avatar_url(user, 128)
+            if url and url != self._avatar_url:
+                self._avatar_url = url
+                self._net.get(url, self._on_avatar_bytes)
+
+    def _on_avatar_bytes(self, data):
+        if not data:
+            return
+        try:
+            img = Image.open(io.BytesIO(data)).convert("RGBA")
+        except Exception:
+            return
+        self.discord_avatar_pixmap = qt_utils.pil_to_pixmap(img)
+        self.identity_view.set_avatar(qt_utils.crisp_from_pil(img, 34, radius=17))
+        # push the real avatar into any open editors
+        for editor in self._editors:
+            if hasattr(editor, "apply_discord_avatar"):
+                editor.apply_discord_avatar(self.discord_avatar_pixmap, self.discord_username)
 
     # --- window behaviour ----------------------------------------------------
     def showEvent(self, event):

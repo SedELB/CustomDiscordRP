@@ -1,9 +1,19 @@
+# Markdown notes (keep the README)
 *.md
 !README.md
+
+# Byte-compiled / cache
 *.pyc
+__pycache__/
+
+# Misc
 *.ottotime
+
+# Local user data / generated assets — keep out of the repo
 *.json
-!config.json
 *.png
 *.jpg
 
+# ...but keep the README screenshots
+!docs/images/
+!docs/images/*.png

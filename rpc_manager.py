@@ -1,24 +1,71 @@
+import json
+import struct
+
 from pypresence import Presence
-from pypresence.exceptions import DiscordNotFound, PipeClosed, InvalidPipe
+from pypresence.exceptions import (
+    DiscordNotFound, PipeClosed, InvalidPipe, InvalidID, DiscordError,
+)
 from pypresence.types import ActivityType
+from pypresence.utils import get_ipc_path
 
 RPC = None
 _connected = False
 _current_client_id = None
+_user = None             # local Discord user from the RPC handshake (id, username, avatar, …)
+_notified_missing = False  # throttle the "Discord not running" log to once per outage
+
+
+class _UserPresence(Presence):
+    """pypresence parses the handshake READY payload and discards it. We override
+    the handshake to keep the `user` object it carries — that's the Discord
+    account currently running the local client (no OAuth needed)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = None
+
+    async def handshake(self):
+        ipc_path = get_ipc_path(self.pipe)
+        if not ipc_path:
+            raise DiscordNotFound
+
+        await self.create_reader_writer(ipc_path)
+        self.send_data(0, {"v": 1, "client_id": self.client_id})
+        preamble = await self.sock_reader.read(8)
+        if len(preamble) < 8:
+            raise InvalidPipe
+        code, length = struct.unpack("<ii", preamble)
+        data = json.loads(await self.sock_reader.read(length))
+        if "code" in data:
+            if data.get("message") == "Invalid Client ID":
+                raise InvalidID
+            raise DiscordError(data["code"], data["message"])
+        try:
+            self.user = data.get("data", {}).get("user")
+        except Exception:
+            self.user = None
+        if self._events_on:
+            self.sock_reader.feed_data = self.on_event
 
 
 def connect(client_id):
-    global RPC, _connected, _current_client_id
+    global RPC, _connected, _current_client_id, _user, _notified_missing
     try:
-        RPC = Presence(client_id)
+        RPC = _UserPresence(client_id)
         RPC.connect()
         _connected = True
         _current_client_id = client_id
+        _notified_missing = False
+        if getattr(RPC, "user", None):
+            _user = RPC.user
         return True
     except DiscordNotFound:
-        print("Discord client not running.")
+        if not _notified_missing:
+            print("Discord client not running.")
+            _notified_missing = True
         _connected = False
         _current_client_id = None
+        _user = None
         return False
     except Exception as exc:
         print(f"RPC connect failed: {exc}")
@@ -29,6 +76,10 @@ def connect(client_id):
 
 def is_connected():
     return _connected
+
+
+def get_user():
+    return _user
 
 
 def ensure_connected(client_id):
