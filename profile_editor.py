@@ -2,8 +2,8 @@ import io
 import os
 import uuid
 from PIL import Image
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QPixmap, QCursor, QPainter, QColor, QBrush
+from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF
+from PyQt6.QtGui import QPixmap, QCursor, QPainter, QPen, QFont, QColor, QBrush
 from PyQt6.QtWidgets import (
     QDialog, QWidget, QFrame, QLabel, QPushButton, QLineEdit, QFileDialog,
     QVBoxLayout, QHBoxLayout, QScrollArea, QMessageBox,
@@ -54,6 +54,141 @@ def _card_edit(placeholder, value="", point_size=10, bold=False):
     font.setBold(bold)
     edit.setFont(font)
     return edit
+
+
+class _ExampleCanvas(QWidget):
+    """Draws a mini Discord activity block with the relevant image element highlighted."""
+    def __init__(self, kind):
+        super().__init__()
+        self.kind = kind  # "large" or "small"
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        W, H = self.width(), self.height()
+        card_w = min(W - 40, 244)
+        card_h = 100
+        cx = (W - card_w) // 2
+        cy = 8
+
+        # card background
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(styles.BG_TERTIARY)))
+        p.drawRoundedRect(QRectF(cx, cy, card_w, card_h), 8, 8)
+
+        # "PLAYING A GAME" label
+        f = QFont(); f.setPointSize(7); f.setBold(True)
+        p.setFont(f)
+        p.setPen(QColor(styles.TEXT_MUTED))
+        p.drawText(cx + 12, cy + 18, "PLAYING A GAME")
+
+        img_x = cx + 12
+        img_y = cy + 26
+        img_sz = 56
+
+        accent = QColor(styles.ACCENT)
+        accent_fill = QColor(accent)
+        accent_fill.setAlpha(45)
+
+        # large image box
+        if self.kind == "large":
+            p.setPen(QPen(accent, 2))
+            p.setBrush(QBrush(accent_fill))
+        else:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(QColor(styles.BG_PRIMARY)))
+        p.drawRoundedRect(QRectF(img_x, img_y, img_sz, img_sz), 8, 8)
+
+        # text stubs
+        tx = img_x + img_sz + 10
+        f2 = QFont(); f2.setPointSize(9); f2.setBold(True)
+        p.setFont(f2); p.setPen(QColor(styles.TEXT_PRIMARY))
+        p.drawText(tx, img_y + 14, "Application Name")
+        f3 = QFont(); f3.setPointSize(8)
+        p.setFont(f3); p.setPen(QColor(styles.TEXT_MUTED))
+        p.drawText(tx, img_y + 29, "Details")
+        p.drawText(tx, img_y + 43, "State")
+        p.drawText(tx, img_y + 57, "00:00 elapsed")
+
+        # small badge at bottom-right of large image
+        bd = 18
+        bx = img_x + img_sz - bd // 2
+        by = img_y + img_sz - bd // 2
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(styles.BG_TERTIARY)))
+        p.drawEllipse(QRectF(bx - 2, by - 2, bd + 4, bd + 4))
+        if self.kind == "small":
+            p.setPen(QPen(accent, 2))
+            p.setBrush(QBrush(accent_fill))
+        else:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(QColor(styles.BG_PRIMARY)))
+        p.drawEllipse(QRectF(bx, by, bd, bd))
+
+        # annotation arrow + label (both point downward from their element)
+        ann_f = QFont(); ann_f.setPointSize(8); ann_f.setBold(True)
+        p.setFont(ann_f)
+        p.setPen(QPen(accent, 1.5))
+
+        if self.kind == "large":
+            tip_x = img_x + img_sz / 2
+            tip_y = img_y + img_sz + 3
+            tail_y = tip_y + 14
+            p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x, tail_y))
+            p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x - 4, tip_y + 6))
+            p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x + 4, tip_y + 6))
+            p.setPen(accent)
+            p.drawText(int(tip_x) - 33, int(tail_y) + 14, "Large image")
+        else:
+            tip_x = bx + bd / 2
+            tip_y = by + bd + 3
+            tail_y = tip_y + 14
+            p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x, tail_y))
+            p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x - 4, tip_y + 6))
+            p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x + 4, tip_y + 6))
+            p.setPen(accent)
+            p.drawText(int(tip_x) - 33, int(tail_y) + 14, "Small image")
+
+        p.end()
+
+
+class _ImageExampleDialog(QDialog):
+    def __init__(self, parent, kind):
+        super().__init__(parent)
+        self.setWindowTitle("Large image" if kind == "large" else "Small image")
+        self.setWindowIcon(qt_utils.app_icon())
+        self.setFixedSize(360, 300)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 20, 24, 20)
+        lay.setSpacing(12)
+
+        if kind == "large":
+            heading = "Large image"
+            desc = ("The large image is the main artwork shown in your Rich Presence. "
+                    "It appears as a square on the left of the activity block and is "
+                    "visible to everyone who views your profile.")
+        else:
+            heading = "Small image"
+            desc = ("The small image is an optional circular badge overlaid on the "
+                    "bottom-right corner of the large image. Use it for a secondary "
+                    "icon such as a game mode, difficulty, or status indicator.")
+
+        lay.addWidget(_label(heading, size=12, bold=True))
+        lay.addWidget(_hint(desc))
+
+        canvas = _ExampleCanvas(kind)
+        canvas.setFixedHeight(160)
+        lay.addWidget(canvas)
+
+        row = QHBoxLayout()
+        row.addStretch()
+        close_btn = QPushButton("Got it")
+        close_btn.setProperty("kind", "ghost")
+        close_btn.clicked.connect(self.close)
+        row.addWidget(close_btn)
+        lay.addLayout(row)
 
 
 class _AvatarDot(QWidget):
@@ -298,7 +433,14 @@ class ProfileEditor(QDialog):
 
     def _build_images_section(self):
         panel, lay = self._section("IMAGES")
-        lay.addWidget(_label("Large image (asset key or URL)", size=9, bold=True))
+
+        # --- Large image ---
+        hdr = QHBoxLayout()
+        hdr.addWidget(_label("Large image", size=9, bold=True))
+        hdr.addStretch()
+        hdr.addWidget(self._example_link("large"))
+        lay.addLayout(hdr)
+
         self.edit_large_key = _field(
             "Asset name from the dev portal, or an https:// image URL",
             self.profile.get("large_image_url") or self.profile.get("large_image_key") or "",
@@ -315,14 +457,29 @@ class ProfileEditor(QDialog):
         self.edit_large_text = _field("Hover text for the large image", self.profile.get("large_image_text", ""))
         lay.addWidget(self.edit_large_text)
 
-        lay.addWidget(_label("Small image (asset key or URL)", size=9, bold=True))
+        # --- separator ---
+        lay.addSpacing(4)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"border: none; background: {styles.BORDER};")
+        sep.setFixedHeight(1)
+        lay.addWidget(sep)
+        lay.addSpacing(2)
+
+        # --- Small image ---
+        hdr2 = QHBoxLayout()
+        hdr2.addWidget(_label("Small image", size=9, bold=True))
+        hdr2.addStretch()
+        hdr2.addWidget(self._example_link("small"))
+        lay.addLayout(hdr2)
+
         self.edit_small_key = _field(
             "Optional corner badge image",
             self.profile.get("small_image_url") or self.profile.get("small_image_key") or "",
         )
         lay.addWidget(self.edit_small_key)
         lay.addWidget(_hint(
-            "A small badge overlaid on the bottom-right corner of the large image. "
+            "A small circular badge overlaid on the bottom-right corner of the large image. "
             "Useful for showing a game mode, server icon, or status badge."
         ))
 
@@ -330,6 +487,13 @@ class ProfileEditor(QDialog):
         self.edit_small_text = _field("Hover text for the small image", self.profile.get("small_image_text", ""))
         lay.addWidget(self.edit_small_text)
         return panel
+
+    def _example_link(self, kind):
+        lbl = QLabel(f'<a style="color:{styles.TEXT_LINK}; text-decoration:none;" href="#">See example</a>')
+        f = lbl.font(); f.setPointSize(8); lbl.setFont(f)
+        lbl.setOpenExternalLinks(False)
+        lbl.linkActivated.connect(lambda _: _ImageExampleDialog(self, kind).exec())
+        return lbl
 
     def _build_behavior_section(self):
         panel, lay = self._section("BEHAVIOR")
