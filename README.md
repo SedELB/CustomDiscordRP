@@ -77,13 +77,6 @@ Click **Start monitoring** in the bottom status bar. When a profiled app is dete
 
 Turn on **Run on startup** to launch CustomRP into the tray with monitoring already running whenever Windows starts. Switch it back off to disable.
 
-## How it works
-
-- `main.py` starts the tray icon, the window, and the background loop.
-- The loop checks running processes every two seconds with psutil and activates the matching profile.
-- `rpc_manager` talks to Discord over its local connection with pypresence and updates the presence.
-- Elapsed time counts from when the presence becomes active, not from when the app launched.
-
 ## Troubleshooting
 
 - **Status doesn't appear** — make sure Discord is open and you clicked Start monitoring. The tray icon turns red and reads "Discord not detected" when Discord isn't found.
