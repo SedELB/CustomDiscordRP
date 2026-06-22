@@ -83,7 +83,7 @@ def get_user():
 
 
 def ensure_connected(client_id):
-    # (Re)connect if disconnected or the app id changed (profile switch / Discord restart).
+    """(Re)connect if disconnected or the app id changed (profile switch / Discord restart)."""
     global _current_client_id
     if _connected and _current_client_id == client_id:
         return True
@@ -143,7 +143,7 @@ def update_from_profile(profile, start_time=None):
 
 
 def clear_presence():
-    # Clear the activity but keep the connection alive.
+    """Clear the activity but keep the connection alive."""
     global _connected
     if RPC is None or not _connected:
         return

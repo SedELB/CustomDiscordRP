@@ -26,8 +26,8 @@ def _label(text, size=None, bold=False, muted=False):
 
 # --- window control buttons --------------------------------------------------
 class _WinButton(QPushButton):
-    # Flat 46x36 button that paints a crisp line glyph over the stylesheet
-    # background. glyph in {"min", "max", "close"}.
+    """Flat 46x36 button that paints a crisp line glyph (min/max/close) over the
+    stylesheet-painted background."""
     def __init__(self, glyph, parent=None):
         super().__init__(parent)
         self._glyph = glyph
@@ -54,8 +54,7 @@ class _WinButton(QPushButton):
         if self._glyph == "min":
             p.drawLine(QPointF(cx - r, cy), QPointF(cx + r, cy))
         elif self._glyph == "max":
-            if self._restore:
-                # two overlapping squares
+            if self._restore:  # two overlapping squares
                 p.drawRect(QRectF(cx - r + 2, cy - r, 2 * r - 2, 2 * r - 2))
                 p.setBrush(QBrush(self._bg_for_restore()))
                 p.drawRect(QRectF(cx - r, cy - r + 2, 2 * r - 2, 2 * r - 2))
@@ -71,7 +70,7 @@ class _WinButton(QPushButton):
 
 
 class TitleBar(QFrame):
-    # Custom draggable titlebar for the frameless window.
+    """Custom draggable titlebar with window controls for the frameless window."""
     def __init__(self, window):
         super().__init__()
         self._window = window
@@ -139,7 +138,7 @@ class TitleBar(QFrame):
 
 # --- animated status pulse dot ----------------------------------------------
 class PulseDot(QWidget):
-    # 10px dot with an expanding/fading ring when "running". Red & static when off.
+    """Status dot with an expanding/fading ring when running; red and static when off."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedSize(QSize(22, 22))
@@ -268,8 +267,7 @@ class _Grip(QWidget):
 
 
 class ResizeGrips:
-    # Eight thin overlay widgets along the window edges/corners that trigger
-    # native resizing on a frameless window.
+    """Eight edge/corner overlay widgets that make a frameless window resizable."""
     M = 6   # edge thickness
     C = 12  # corner size
 

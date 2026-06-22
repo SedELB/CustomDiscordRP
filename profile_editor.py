@@ -3,7 +3,7 @@ import os
 import uuid
 from PIL import Image
 from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF
-from PyQt6.QtGui import QPixmap, QCursor, QPainter, QPen, QFont, QColor, QBrush
+from PyQt6.QtGui import QPixmap, QCursor, QPainter, QPen, QFont, QColor, QBrush, QPainterPath
 from PyQt6.QtWidgets import (
     QDialog, QWidget, QFrame, QLabel, QPushButton, QLineEdit, QFileDialog,
     QVBoxLayout, QHBoxLayout,
@@ -56,50 +56,53 @@ def _card_edit(placeholder, value="", point_size=10, bold=False):
 
 
 class _ExampleCanvas(QWidget):
-    """Draws a mini Discord activity block with the relevant image element highlighted."""
+    """Mini Discord activity block with the large or small image slot highlighted."""
     def __init__(self, kind):
         super().__init__()
         self.kind = kind  # "large" or "small"
 
-    def paintEvent(self, _event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        W, H = self.width(), self.height()
-        card_w = min(W - 40, 244)
-        card_h = 100
-        cx = (W - card_w) // 2
-        cy = 8
-
-        # card background
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(QColor(styles.BG_TERTIARY)))
-        p.drawRoundedRect(QRectF(cx, cy, card_w, card_h), 8, 8)
-
-        # "PLAYING A GAME" label
-        f = QFont(); f.setPointSize(7); f.setBold(True)
-        p.setFont(f)
-        p.setPen(QColor(styles.TEXT_MUTED))
-        p.drawText(cx + 12, cy + 18, "PLAYING A GAME")
-
-        img_x = cx + 12
-        img_y = cy + 26
-        img_sz = 56
-
-        accent = QColor(styles.ACCENT)
-        accent_fill = QColor(accent)
-        accent_fill.setAlpha(45)
-
-        # large image box
-        if self.kind == "large":
+    def _slot_style(self, p, active, accent, accent_fill):
+        if active:
             p.setPen(QPen(accent, 2))
             p.setBrush(QBrush(accent_fill))
         else:
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QBrush(QColor(styles.BG_PRIMARY)))
+
+    def _arrow(self, p, accent, tip_x, tip_y, label):
+        tail_y = tip_y + 14
+        p.setPen(QPen(accent, 1.5))
+        p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x, tail_y))
+        p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x - 4, tip_y + 6))
+        p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x + 4, tip_y + 6))
+        p.setPen(accent)
+        p.drawText(int(tip_x) - 33, int(tail_y) + 14, label)
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        card_w = min(self.width() - 40, 244)
+        cx = (self.width() - card_w) // 2
+        cy = 8
+
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(styles.BG_TERTIARY)))
+        p.drawRoundedRect(QRectF(cx, cy, card_w, 100), 8, 8)
+
+        f = QFont(); f.setPointSize(7); f.setBold(True)
+        p.setFont(f)
+        p.setPen(QColor(styles.TEXT_MUTED))
+        p.drawText(cx + 12, cy + 18, "PLAYING A GAME")
+
+        img_x, img_y, img_sz = cx + 12, cy + 26, 56
+        accent = QColor(styles.ACCENT)
+        accent_fill = QColor(accent)
+        accent_fill.setAlpha(45)
+
+        self._slot_style(p, self.kind == "large", accent, accent_fill)
         p.drawRoundedRect(QRectF(img_x, img_y, img_sz, img_sz), 8, 8)
 
-        # text stubs
         tx = img_x + img_sz + 10
         f2 = QFont(); f2.setPointSize(9); f2.setBold(True)
         p.setFont(f2); p.setPen(QColor(styles.TEXT_PRIMARY))
@@ -110,44 +113,21 @@ class _ExampleCanvas(QWidget):
         p.drawText(tx, img_y + 43, "State")
         p.drawText(tx, img_y + 57, "00:00 elapsed")
 
-        # small badge at bottom-right of large image
         bd = 18
         bx = img_x + img_sz - bd // 2
         by = img_y + img_sz - bd // 2
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(QColor(styles.BG_TERTIARY)))
         p.drawEllipse(QRectF(bx - 2, by - 2, bd + 4, bd + 4))
-        if self.kind == "small":
-            p.setPen(QPen(accent, 2))
-            p.setBrush(QBrush(accent_fill))
-        else:
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(QColor(styles.BG_PRIMARY)))
+        self._slot_style(p, self.kind == "small", accent, accent_fill)
         p.drawEllipse(QRectF(bx, by, bd, bd))
 
-        # annotation arrow + label (both point downward from their element)
         ann_f = QFont(); ann_f.setPointSize(8); ann_f.setBold(True)
         p.setFont(ann_f)
-        p.setPen(QPen(accent, 1.5))
-
         if self.kind == "large":
-            tip_x = img_x + img_sz / 2
-            tip_y = img_y + img_sz + 3
-            tail_y = tip_y + 14
-            p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x, tail_y))
-            p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x - 4, tip_y + 6))
-            p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x + 4, tip_y + 6))
-            p.setPen(accent)
-            p.drawText(int(tip_x) - 33, int(tail_y) + 14, "Large image")
+            self._arrow(p, accent, img_x + img_sz / 2, img_y + img_sz + 3, "Large image")
         else:
-            tip_x = bx + bd / 2
-            tip_y = by + bd + 3
-            tail_y = tip_y + 14
-            p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x, tail_y))
-            p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x - 4, tip_y + 6))
-            p.drawLine(QPointF(tip_x, tip_y), QPointF(tip_x + 4, tip_y + 6))
-            p.setPen(accent)
-            p.drawText(int(tip_x) - 33, int(tail_y) + 14, "Small image")
+            self._arrow(p, accent, bx + bd / 2, by + bd + 3, "Small image")
 
         p.end()
 
@@ -191,7 +171,7 @@ class _ImageExampleDialog(QDialog):
 
 
 class _AvatarDot(QWidget):
-    # Circular avatar with a Discord-style online dot, drawn over the banner edge.
+    """Circular avatar with a Discord-style online dot, drawn over the banner edge."""
     def __init__(self, pixmap, size=64, parent=None):
         super().__init__(parent)
         self._pix = pixmap
@@ -205,13 +185,12 @@ class _AvatarDot(QWidget):
     def paintEvent(self, _event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        # ring matching the card background
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(QColor(styles.CARD_BG)))
         p.drawEllipse(0, 0, self._size + 8, self._size + 8)
-        path_rect = self.rect().adjusted(4, 4, -4, -4)
+        clip = self.rect().adjusted(4, 4, -4, -4)
         p.setBrush(QBrush(QColor(styles.BG_TERTIARY)))
-        p.drawEllipse(path_rect)
+        p.drawEllipse(clip)
         if self._pix is not None:
             # Scale in device pixels and tag the ratio so high-DPI screens stay sharp.
             dpr = self.devicePixelRatioF()
@@ -222,15 +201,11 @@ class _AvatarDot(QWidget):
                 Qt.TransformationMode.SmoothTransformation,
             )
             scaled.setDevicePixelRatio(dpr)
-            p.setClipping(True)
-            clip = self.rect().adjusted(4, 4, -4, -4)
-            from PyQt6.QtGui import QPainterPath
             path = QPainterPath()
             path.addEllipse(clip.toRectF())
             p.setClipPath(path)
             p.drawPixmap(4, 4, scaled)
             p.setClipping(False)
-        # online dot
         dot = 18
         p.setBrush(QBrush(QColor(styles.CARD_BG)))
         p.drawEllipse(self.width() - dot - 2, self.height() - dot - 2, dot, dot)
@@ -315,9 +290,7 @@ class ProfileEditor(QDialog):
         )
         lay.addWidget(banner)
 
-        # Your real Discord account avatar (fetched live over RPC) sits over the
-        # banner edge. Rich Presence can't *change* it — only the activity image
-        # below is editable — but we show the real one as a read-only preview.
+        # Read-only preview of the real account avatar; Rich Presence can't change it.
         cached = getattr(self.parent(), "discord_avatar_pixmap", None)
         avatar_pm = cached if cached is not None else qt_utils.pil_to_pixmap(qt_utils.discord_avatar_pil(128))
         self._avatar = _AvatarDot(avatar_pm, 64, parent=card)
@@ -388,7 +361,7 @@ class ProfileEditor(QDialog):
         return "Your Discord avatar. Rich Presence cannot change this."
 
     def apply_discord_avatar(self, pixmap, username):
-        # Called by the main window when the live Discord avatar arrives/changes.
+        """Called by the main window when the live Discord avatar arrives or changes."""
         self._avatar.setPixmap(pixmap)
         self._avatar.setToolTip(self._avatar_tooltip(username))
 
@@ -583,7 +556,6 @@ class ProfileEditor(QDialog):
             self._img_status.setText("")
 
     def _refresh_card_image(self):
-        # Only the activity (RP) image changes; the avatar stays the generic one.
         if self.large_image_path and os.path.exists(self.large_image_path):
             try:
                 img = Image.open(self.large_image_path)

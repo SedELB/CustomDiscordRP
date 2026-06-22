@@ -1,27 +1,9 @@
 import psutil as ps
 
 
-def is_process_running(exe_name: str) -> bool:
-    target = (exe_name or "").lower()
-    if not target:
-        return False
-    for process in ps.process_iter(attrs=['name']):
-        if (process.info.get('name') or '').lower() == target:
-            return True
-    return False
-
-
-def get_running_target(exe_list):
-    running_processes = []
-    for executable in exe_list:
-        if is_process_running(executable):
-            running_processes.append(executable)
-    return running_processes
-
-
 def find_active_profile(profiles):
-    # Among enabled profiles whose target exe is running, pick the one whose
-    # process started most recently. Returns (profile, start_time) or (None, None).
+    """Return (profile, start_time) for the enabled profile whose target exe is
+    running and started most recently, or (None, None) if none match."""
     targets = {}
     for profile in profiles:
         if not profile.get('enabled', True):

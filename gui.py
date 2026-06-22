@@ -3,7 +3,7 @@ import json
 import os
 from PIL import Image
 from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QFont, QCursor
+from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFrame, QLabel, QPushButton, QLineEdit,
     QVBoxLayout, QHBoxLayout, QMessageBox, QGraphicsOpacityEffect,
@@ -57,7 +57,7 @@ class ProfileRow(qt_utils.HoverColorMixin, QFrame):
     def __init__(self, profile, window):
         super().__init__()
         self.profile = profile
-        self.window = window
+        self.main_window = window
         self.setObjectName("row")
         self.init_hover(styles.ROW_BG, styles.ROW_HOVER, radius=8)
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
@@ -93,7 +93,7 @@ class ProfileRow(qt_utils.HoverColorMixin, QFrame):
         edit_btn.setFixedHeight(34)
         edit_btn.setMinimumWidth(64)
         edit_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        edit_btn.clicked.connect(lambda: self.window.open_editor(self.profile))
+        edit_btn.clicked.connect(lambda: self.main_window.open_editor(self.profile))
         lay.addWidget(edit_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         delete_btn = QPushButton("Delete")
@@ -119,7 +119,7 @@ class ProfileRow(qt_utils.HoverColorMixin, QFrame):
 
     def _delete(self):
         answer = QMessageBox.question(
-            self.window, "Delete profile",
+            self.main_window, "Delete profile",
             f"Delete “{self.profile.get('profileTitle', 'Untitled')}”?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
@@ -127,13 +127,13 @@ class ProfileRow(qt_utils.HoverColorMixin, QFrame):
             if self.profile in app_data["profiles"]:
                 app_data["profiles"].remove(self.profile)
                 save_data()
-            self.window.refresh_profiles()
+            self.main_window.refresh_profiles()
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             child = self.childAt(event.position().toPoint())
             if not isinstance(child, (QPushButton, qt_utils.Switch)):
-                self.window.open_editor(self.profile)
+                self.main_window.open_editor(self.profile)
         super().mouseReleaseEvent(event)
 
 

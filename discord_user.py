@@ -1,6 +1,5 @@
-# discord_user.py — helpers for the local Discord account surfaced by the RPC
-# handshake (see rpc_manager._UserPresence). The user dict looks like:
-#   {"id": "...", "username": "...", "global_name": "...", "avatar": "<hash>"}
+# Helpers for the local Discord account surfaced by the RPC handshake.
+# The user dict looks like {"id", "username", "global_name", "avatar"}.
 CDN = "https://cdn.discordapp.com"
 
 
@@ -10,18 +9,9 @@ def display_name(user):
     return user.get("global_name") or user.get("username")
 
 
-def handle(user):
-    # The @username (new system has discriminator "0").
-    if not user:
-        return None
-    name = user.get("username")
-    disc = user.get("discriminator")
-    if name and disc and disc != "0":
-        return f"{name}#{disc}"
-    return name
-
-
 def avatar_url(user, size=128):
+    """Build the CDN URL for a user's avatar, falling back to Discord's default
+    colored avatar when the account has no custom one."""
     if not user:
         return None
     uid = user.get("id")
@@ -29,7 +19,6 @@ def avatar_url(user, size=128):
     if uid and avatar:
         ext = "gif" if str(avatar).startswith("a_") else "png"
         return f"{CDN}/avatars/{uid}/{avatar}.{ext}?size={size}"
-    # No custom avatar — fall back to Discord's default colored avatar.
     if uid:
         try:
             index = (int(uid) >> 22) % 6

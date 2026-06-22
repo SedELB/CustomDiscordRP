@@ -91,23 +91,19 @@ def crisp_from_pil(img, logical_size, radius=None):
 
 
 def discord_avatar_pil(size=64):
-    # Generic Discord "new user" avatar: blurple circle + white Clyde mark.
+    """Generic Discord "new user" avatar: blurple circle with a white Clyde mark."""
     big = size * SS
     img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     dc = ImageDraw.Draw(img)
     dc.ellipse((0, 0, big - 1, big - 1), fill=styles.ACCENT)
 
-    # Clyde logo, centred. Body is a rounded "controller" with two feet + two eyes.
     lw, lh = big * 0.60, big * 0.46
     lx, ly = (big - lw) / 2, (big - lh) / 2
     white = "#ffffff"
-    # head / body
     dc.rounded_rectangle((lx, ly, lx + lw, ly + lh * 0.84), radius=lh * 0.42, fill=white)
-    # feet (rounded protrusions at the bottom corners)
     foot_w = lw * 0.34
     dc.ellipse((lx, ly + lh * 0.40, lx + foot_w, ly + lh), fill=white)
     dc.ellipse((lx + lw - foot_w, ly + lh * 0.40, lx + lw, ly + lh), fill=white)
-    # eyes (blurple vertical pills)
     eye_w, eye_h = lw * 0.135, lh * 0.40
     eye_y = ly + lh * 0.30
     dc.rounded_rectangle(
@@ -185,7 +181,7 @@ def animate_open(widget):
 
 
 class SmoothScrollArea(QScrollArea):
-    # Wheel scrolling animated with easing instead of hard steps.
+    """Scroll area whose wheel scrolling is eased instead of stepped."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self._anim = QPropertyAnimation(self.verticalScrollBar(), b"value", self)
@@ -212,7 +208,7 @@ class SmoothScrollArea(QScrollArea):
 
 
 class Switch(QWidget):
-    # Discord-style animated toggle switch.
+    """Discord-style animated toggle switch."""
     def __init__(self, checked=False, parent=None, on_change=None):
         super().__init__(parent)
         self._checked = checked
@@ -273,7 +269,7 @@ class Switch(QWidget):
 
 
 class HoverColorMixin:
-    # Animated background-color hover for QFrame-based rows.
+    """Animated background-color hover for QFrame-based rows."""
     def init_hover(self, base_hex, hover_hex, radius=8):
         self._hover_base = QColor(base_hex)
         self._hover_target = QColor(hover_hex)

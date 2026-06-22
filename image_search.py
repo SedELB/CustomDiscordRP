@@ -1,16 +1,17 @@
-# image_search.py — pure helpers for logo search results (no network here).
-# All HTTP goes through qt_net.Net so it runs on Qt's event loop; this module
-# only parses responses and rewrites Brandfetch icon URLs.
+# Pure helpers for logo search results. All HTTP goes through qt_net.Net; this
+# module only parses Brandfetch responses and rewrites their icon URLs.
 import json
 
 
 def parse_logo_results(json_bytes, query="", n=8):
-    # Returns a list of {name, url} from a Brandfetch search response.
+    """Return a list of {name, url} from a Brandfetch search response."""
     if not json_bytes:
         return []
     try:
         data = json.loads(json_bytes)
     except Exception:
+        return []
+    if not isinstance(data, list):
         return []
 
     results = []
@@ -28,7 +29,7 @@ def parse_logo_results(json_bytes, query="", n=8):
 
 
 def hires_png(icon_url):
-    # Bump Brandfetch's 128px webp thumbnail to a larger transparent PNG.
+    """Bump Brandfetch's 128px webp thumbnail to a larger transparent PNG."""
     url = icon_url.replace("/w/128/h/128/", "/w/400/h/400/")
     url = url.replace("/fallback/lettermark/", "/fallback/transparent/")
     url = url.replace("/icon.webp", "/icon.png")
