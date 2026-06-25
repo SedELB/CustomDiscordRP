@@ -194,6 +194,20 @@ QTabBar::tab:selected {{
 }}
 QTabBar::tab:hover {{ color: {TEXT_PRIMARY}; }}
 
+QRadioButton {{
+    color: {TEXT_PRIMARY};
+    spacing: 6px;
+}}
+QRadioButton::indicator {{
+    width: 14px;
+    height: 14px;
+    border-radius: 8px;
+    border: 2px solid {BORDER};
+    background: transparent;
+}}
+QRadioButton::indicator:hover {{ border-color: {TEXT_MUTED}; }}
+QRadioButton::indicator:checked {{ border: 4px solid {ACCENT}; background: transparent; }}
+
 QPushButton[kind="thumb"] {{
     background: {BG_TERTIARY};
     border: 2px solid {BG_TERTIARY};
