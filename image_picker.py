@@ -28,9 +28,10 @@ def square_crop(img, size=512):
 
 class ImagePicker(QDialog):
     # on_pick(local_path_or_None, hosted_url_or_None)
-    def __init__(self, parent, profile_id, default_query, on_pick):
+    def __init__(self, parent, profile_id, default_query, on_pick, image_kind="large"):
         super().__init__(parent)
         self.profile_id = profile_id
+        self.image_kind = image_kind
         self.on_pick = on_pick
         self.selected_image = None
         self._net = qt_net.Net(self)
@@ -222,7 +223,7 @@ class ImagePicker(QDialog):
         # All PIL work on the main thread; only the upload goes async via Qt.
         square = square_crop(self.selected_image)
         os.makedirs(IMAGES_DIR, exist_ok=True)
-        self._save_path = os.path.join(IMAGES_DIR, f"{self.profile_id}.png")
+        self._save_path = os.path.join(IMAGES_DIR, f"{self.profile_id}_{self.image_kind}.png")
         try:
             square.save(self._save_path, "PNG")
         except Exception as exc:

@@ -311,16 +311,17 @@ class ProfileEditor(QDialog):
         self.resize(540, 780)
 
         self.large_image_path = self.profile.get("large_image_path", "")
+        self.small_image_path = self.profile.get("small_image_path", "")
         self._elapsed = 0
         self._placeholder_pm = qt_utils.placeholder_pixmap(60)
         self._url_fetch_timer = None
+        self._small_url_timer = None
         self._opened = False
 
         self._build_ui()
         self._refresh_card_image()
         self._update_image_status()
         self._update_tooltips()
-        self._update_small_image_preview()
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
@@ -421,7 +422,9 @@ class ProfileEditor(QDialog):
         self._small_image = _FastTooltipLabel(img_container)
         self._small_image.setFixedSize(24, 24)
         self._small_image.move(40, 40)
-        self._small_image.hide()
+        self._small_image.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._small_image.mouseReleaseEvent = lambda _e: self._open_image_picker("small")
+        self._small_image.show()
         
         act_row.addWidget(img_container, alignment=Qt.AlignmentFlag.AlignTop)
 
@@ -580,6 +583,7 @@ class ProfileEditor(QDialog):
             "Optional corner badge image",
             self.profile.get("small_image_url") or self.profile.get("small_image_key") or "",
         )
+        self.edit_small_key.textChanged.connect(self._schedule_small_url_preview)
         self.edit_small_key.textChanged.connect(self._update_small_image_preview)
         lay.addWidget(self.edit_small_key)
         lay.addWidget(_hint(
@@ -659,20 +663,26 @@ class ProfileEditor(QDialog):
         verbs = {0: "PLAYING", 2: "LISTENING", 3: "WATCHING", 5: "COMPETING"}
         self.lbl_activity_type.setText(verbs.get(btn_id, "PLAYING"))
 
-    def _open_image_picker(self):
+    def _open_image_picker(self, kind="large"):
         # Brandfetch matches brand names, so search the app name itself.
         default_query = (self.edit_name.text() or self.edit_title.text() or "").strip()
-        picker = image_picker.ImagePicker(self, self.profile["id"], default_query, self._on_image_picked)
+        picker = image_picker.ImagePicker(self, self.profile["id"], default_query, lambda path, url: self._on_image_picked(path, url, kind), kind)
         picker.exec()
 
-    def _on_image_picked(self, path, url):
-        if path:
-            self.large_image_path = path
-        if url:
-            # Auto-fill the field so the image actually renders in Discord.
-            self.edit_large_key.setText(url)
+    def _on_image_picked(self, path, url, kind):
+        if kind == "large":
+            if path:
+                self.large_image_path = path
+            if url:
+                # Auto-fill the field so the image actually renders in Discord.
+                self.edit_large_key.setText(url)
+            self._update_image_status()
+        else:
+            if path:
+                self.small_image_path = path
+            if url:
+                self.edit_small_key.setText(url)
         self._refresh_card_image()
-        self._update_image_status()
 
     def _update_tooltips(self):
         large_txt = self.edit_large_text.text().strip()
@@ -686,22 +696,28 @@ class ProfileEditor(QDialog):
         self._small_image.setToolTip(small_txt)
 
     def _update_small_image_preview(self):
+        if getattr(self, 'small_image_path', None) and os.path.exists(self.small_image_path):
+            return
+
         val = self.edit_small_key.text().strip()
-        if val:
-            pm = QPixmap(24, 24)
-            pm.fill(Qt.GlobalColor.transparent)
-            p = QPainter(pm)
-            p.setRenderHint(QPainter.RenderHint.Antialiasing)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(QColor(styles.BG_TERTIARY)))
-            p.drawEllipse(0, 0, 24, 24)
+        pm = QPixmap(24, 24)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(styles.BG_TERTIARY)))
+        p.drawEllipse(0, 0, 24, 24)
+        
+        if val or getattr(self, 'small_image_path', None):
             p.setBrush(QBrush(QColor(styles.TEXT_FAINT)))
             p.drawEllipse(2, 2, 20, 20)
-            p.end()
-            self._small_image.setPixmap(pm)
-            self._small_image.show()
         else:
-            self._small_image.hide()
+            p.setBrush(QBrush(QColor("#1e1f22")))
+            p.drawEllipse(2, 2, 20, 20)
+            
+        p.end()
+        self._small_image.setPixmap(pm)
+        self._small_image.show()
 
     def _update_image_status(self):
         value = self.edit_large_key.text().strip()
@@ -719,10 +735,32 @@ class ProfileEditor(QDialog):
             try:
                 img = Image.open(self.large_image_path)
                 self._game_image.setPixmap(qt_utils.crisp_from_pil(img, 60, radius=10))
+            except Exception:
+                self._game_image.setPixmap(self._placeholder_pm)
+        else:
+            self._game_image.setPixmap(self._placeholder_pm)
+            self._schedule_url_preview()
+            
+        if getattr(self, 'small_image_path', None) and os.path.exists(self.small_image_path):
+            try:
+                img = Image.open(self.small_image_path)
+                pm = QPixmap(24, 24)
+                pm.fill(Qt.GlobalColor.transparent)
+                p = QPainter(pm)
+                p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(QColor(styles.BG_TERTIARY)))
+                p.drawEllipse(0, 0, 24, 24)
+                img_pm = qt_utils.crisp_from_pil(img, 20, radius=10)
+                p.drawPixmap(2, 2, 20, 20, img_pm)
+                p.end()
+                self._small_image.setPixmap(pm)
+                self._small_image.show()
                 return
             except Exception:
                 pass
-        self._game_image.setPixmap(self._placeholder_pm)
+        self._update_small_image_preview()
+        self._schedule_small_url_preview()
 
     def _pick_exe(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select executable", "", "Executables (*.exe);;All files (*.*)")
@@ -758,6 +796,42 @@ class ProfileEditor(QDialog):
             return
         self._game_image.setPixmap(qt_utils.crisp_from_pil(pil, 60, radius=10))
 
+    def _schedule_small_url_preview(self):
+        if self._small_url_timer is not None:
+            self._small_url_timer.stop()
+        self._small_url_timer = QTimer(self)
+        self._small_url_timer.setSingleShot(True)
+        self._small_url_timer.timeout.connect(self._fetch_small_url_preview)
+        self._small_url_timer.start(700)
+
+    def _fetch_small_url_preview(self):
+        if getattr(self, 'small_image_path', None):
+            return
+        url = self.edit_small_key.text().strip()
+        if not url.lower().startswith(("http://", "https://")):
+            return
+        self._net.get(url, self._on_small_url_bytes)
+
+    def _on_small_url_bytes(self, data):
+        if data is None or getattr(self, 'small_image_path', None):
+            return
+        try:
+            pil = Image.open(io.BytesIO(data)).convert("RGBA")
+            pm = QPixmap(24, 24)
+            pm.fill(Qt.GlobalColor.transparent)
+            p = QPainter(pm)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(QColor(styles.BG_TERTIARY)))
+            p.drawEllipse(0, 0, 24, 24)
+            img_pm = qt_utils.crisp_from_pil(pil, 20, radius=10)
+            p.drawPixmap(2, 2, 20, 20, img_pm)
+            p.end()
+            self._small_image.setPixmap(pm)
+            self._small_image.show()
+        except Exception:
+            self._update_small_image_preview()
+
     # --- save ----------------------------------------------------------------
     @staticmethod
     def _split_key_or_url(value):
@@ -786,7 +860,8 @@ class ProfileEditor(QDialog):
         p["small_image_text"] = self.edit_small_text.text().strip()
         p["large_image_key"], p["large_image_url"] = self._split_key_or_url(self.edit_large_key.text())
         p["small_image_key"], p["small_image_url"] = self._split_key_or_url(self.edit_small_key.text())
-        p["large_image_path"] = self.large_image_path
+        p["large_image_path"] = getattr(self, "large_image_path", "")
+        p["small_image_path"] = getattr(self, "small_image_path", "")
         p["show_elapsed"] = self.switch_elapsed.isChecked()
         p["activity_type"] = self.activity_group.checkedId()
         if "enabled" not in p:
