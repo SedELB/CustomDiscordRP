@@ -101,7 +101,7 @@ def update_from_profile(profile, start_time=None):
     name = profile.get("statusName") or None
     if name:
         kwargs["name"] = name
-        kwargs["activity_type"] = ActivityType.PLAYING
+        kwargs["activity_type"] = profile.get("activity_type", 0)
 
     details = profile.get("details") or None
     if details:
