@@ -2,8 +2,8 @@ import io
 import os
 import uuid
 from PIL import Image
-from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF
-from PyQt6.QtGui import QPixmap, QCursor, QPainter, QPen, QFont, QColor, QBrush, QPainterPath
+from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF, QPropertyAnimation, QAbstractAnimation, QPoint, QEvent
+from PyQt6.QtGui import QPixmap, QCursor, QPainter, QPen, QFont, QColor, QBrush, QPainterPath, QFontMetrics
 from PyQt6.QtWidgets import (
     QDialog, QWidget, QFrame, QLabel, QPushButton, QLineEdit, QFileDialog,
     QVBoxLayout, QHBoxLayout, QRadioButton, QButtonGroup,
@@ -170,6 +170,87 @@ class _ImageExampleDialog(QDialog):
         lay.addLayout(row)
 
 
+class DiscordTooltip(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._text = ""
+        self._font = QFont()
+        self._font.setPointSize(9)
+        self._font.setBold(True)
+        
+        self.anim = QPropertyAnimation(self, b"windowOpacity")
+        self.anim.setDuration(120)
+        self.anim.setStartValue(0.0)
+        self.anim.setEndValue(1.0)
+        
+    def show_text(self, pos, text):
+        if not text:
+            self.hide()
+            return
+        self._text = text
+        fm = QFontMetrics(self._font)
+        rect = fm.boundingRect(text)
+        w = rect.width() + 24
+        h = rect.height() + 16
+        self.setFixedSize(w, h + 8)
+        
+        self.move(pos.x() - w // 2, pos.y() - h - 12)
+        
+        self.setWindowOpacity(0.0)
+        self.show()
+        self.anim.setDirection(QAbstractAnimation.Direction.Forward)
+        self.anim.start()
+
+    def hide_tooltip(self):
+        self.hide()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        w = self.width()
+        h = self.height() - 8
+        
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor("#111214")))
+        
+        path = QPainterPath()
+        path.addRoundedRect(0, 0, w, h, 6, 6)
+        path.moveTo(w / 2 - 6, h)
+        path.lineTo(w / 2, h + 8)
+        path.lineTo(w / 2 + 6, h)
+        p.drawPath(path)
+        
+        p.setPen(QColor(styles.TEXT_PRIMARY))
+        p.setFont(self._font)
+        p.drawText(0, 0, w, h, Qt.AlignmentFlag.AlignCenter, self._text)
+
+
+class _FastTooltipLabel(QLabel):
+    _shared_tooltip = None
+
+    def event(self, e):
+        if e.type() == QEvent.Type.ToolTip:
+            return True
+        return super().event(e)
+
+    def enterEvent(self, event):
+        if not _FastTooltipLabel._shared_tooltip:
+            _FastTooltipLabel._shared_tooltip = DiscordTooltip()
+            
+        text = self.toolTip()
+        if text:
+            pos = self.mapToGlobal(QPoint(self.width() // 2, 0))
+            _FastTooltipLabel._shared_tooltip.show_text(pos, text)
+        super().enterEvent(event)
+        
+    def leaveEvent(self, event):
+        if _FastTooltipLabel._shared_tooltip:
+            _FastTooltipLabel._shared_tooltip.hide_tooltip()
+        super().leaveEvent(event)
+
+
 class _AvatarDot(QWidget):
     """Circular avatar with a Discord-style online dot, drawn over the banner edge."""
     def __init__(self, pixmap, size=64, parent=None):
@@ -238,6 +319,8 @@ class ProfileEditor(QDialog):
         self._build_ui()
         self._refresh_card_image()
         self._update_image_status()
+        self._update_tooltips()
+        self._update_small_image_preview()
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
@@ -324,12 +407,23 @@ class ProfileEditor(QDialog):
 
         act_row = QHBoxLayout()
         act_row.setSpacing(12)
-        self._game_image = QLabel()
+        
+        img_container = QWidget()
+        img_container.setFixedSize(64, 64)
+        
+        self._game_image = _FastTooltipLabel(img_container)
         self._game_image.setFixedSize(60, 60)
+        self._game_image.move(0, 0)
         self._game_image.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._game_image.mouseReleaseEvent = lambda _e: self._open_image_picker()
         self._game_image.setToolTip("Click to choose an image")
-        act_row.addWidget(self._game_image, alignment=Qt.AlignmentFlag.AlignTop)
+        
+        self._small_image = _FastTooltipLabel(img_container)
+        self._small_image.setFixedSize(24, 24)
+        self._small_image.move(40, 40)
+        self._small_image.hide()
+        
+        act_row.addWidget(img_container, alignment=Qt.AlignmentFlag.AlignTop)
 
         lines = QVBoxLayout()
         lines.setSpacing(1)
@@ -463,6 +557,7 @@ class ProfileEditor(QDialog):
 
         lay.addWidget(_label("Large image tooltip", size=9, bold=True))
         self.edit_large_text = _field("Hover text for the large image", self.profile.get("large_image_text", ""))
+        self.edit_large_text.textChanged.connect(self._update_tooltips)
         lay.addWidget(self.edit_large_text)
 
         # --- separator ---
@@ -485,6 +580,7 @@ class ProfileEditor(QDialog):
             "Optional corner badge image",
             self.profile.get("small_image_url") or self.profile.get("small_image_key") or "",
         )
+        self.edit_small_key.textChanged.connect(self._update_small_image_preview)
         lay.addWidget(self.edit_small_key)
         lay.addWidget(_hint(
             "A small circular badge overlaid on the bottom-right corner of the large image. "
@@ -493,6 +589,7 @@ class ProfileEditor(QDialog):
 
         lay.addWidget(_label("Small image tooltip", size=9, bold=True))
         self.edit_small_text = _field("Hover text for the small image", self.profile.get("small_image_text", ""))
+        self.edit_small_text.textChanged.connect(self._update_tooltips)
         lay.addWidget(self.edit_small_text)
         return panel
 
@@ -576,6 +673,35 @@ class ProfileEditor(QDialog):
             self.edit_large_key.setText(url)
         self._refresh_card_image()
         self._update_image_status()
+
+    def _update_tooltips(self):
+        large_txt = self.edit_large_text.text().strip()
+        small_txt = self.edit_small_text.text().strip()
+        
+        if large_txt:
+            self._game_image.setToolTip(large_txt)
+        else:
+            self._game_image.setToolTip("Click to choose an image")
+            
+        self._small_image.setToolTip(small_txt)
+
+    def _update_small_image_preview(self):
+        val = self.edit_small_key.text().strip()
+        if val:
+            pm = QPixmap(24, 24)
+            pm.fill(Qt.GlobalColor.transparent)
+            p = QPainter(pm)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(QColor(styles.BG_TERTIARY)))
+            p.drawEllipse(0, 0, 24, 24)
+            p.setBrush(QBrush(QColor(styles.TEXT_FAINT)))
+            p.drawEllipse(2, 2, 20, 20)
+            p.end()
+            self._small_image.setPixmap(pm)
+            self._small_image.show()
+        else:
+            self._small_image.hide()
 
     def _update_image_status(self):
         value = self.edit_large_key.text().strip()

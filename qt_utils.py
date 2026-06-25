@@ -116,15 +116,34 @@ def discord_avatar_pil(size=64):
 
 
 def placeholder_image_pil(size=60):
-    # Grey rounded square with a camera glyph, used when no image is set.
+    # Grey rounded square with text, used when no image is set.
     big = size * SS
     img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     dc = ImageDraw.Draw(img)
     dc.rounded_rectangle((0, 0, big - 1, big - 1), radius=big // 6, fill="#1e1f22")
-    body_top = big * 0.38
-    dc.rounded_rectangle((big * 0.18, body_top, big * 0.82, big * 0.78), radius=big // 12, fill="#4e5058")
-    dc.rectangle((big * 0.40, body_top - big * 0.08, big * 0.60, body_top), fill="#4e5058")
-    dc.ellipse((big * 0.40, big * 0.46, big * 0.62, big * 0.68), fill="#1e1f22")
+    
+    font = _load_truetype(int(big * 0.14), bold=True)
+    text1 = "CLICK TO"
+    text2 = "CHANGE"
+    text3 = "IMAGE"
+    
+    def draw_centered(text, y):
+        bbox = dc.textbbox((0, 0), text, font=font)
+        tw = bbox[2] - bbox[0]
+        dc.text(((big - tw) / 2 - bbox[0], y - bbox[1]), text, font=font, fill="#4e5058")
+        return bbox[3] - bbox[1]
+    
+    # Estimate total height to center vertically
+    bbox_test = dc.textbbox((0, 0), "A", font=font)
+    line_h = bbox_test[3] - bbox_test[1]
+    spacing = int(big * 0.05)
+    total_h = 3 * line_h + 2 * spacing
+    
+    y_curr = (big - total_h) / 2
+    y_curr += draw_centered(text1, y_curr) + spacing
+    y_curr += draw_centered(text2, y_curr) + spacing
+    draw_centered(text3, y_curr)
+    
     return img.resize((size, size), Image.LANCZOS)
 
 
