@@ -69,8 +69,8 @@ QLineEdit::placeholder {{
 
 /* Inline edits that live on the presence card */
 QLineEdit[cardEdit="true"] {{
-    background: transparent;
-    border: 1px solid transparent;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px dashed rgba(255, 255, 255, 0.15);
     border-radius: 4px;
     padding: 1px 4px;
 }}

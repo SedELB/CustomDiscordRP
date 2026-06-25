@@ -261,9 +261,12 @@ class ProfileEditor(QDialog):
         outer.addWidget(self._build_bottom_bar())
 
         head_col = QVBoxLayout()
-        head_col.setSpacing(2)
+        head_col.setSpacing(6)
         head_col.addWidget(_label("New Profile" if self.is_new else "Edit Profile", size=15, bold=True))
-        head_col.addWidget(_hint("Live preview. Type on the card, and click the game image to set what Discord shows."))
+        
+        tip = _label("TIP: Click the image to change it, and type directly on the text below to edit!", size=10, bold=True)
+        tip.setStyleSheet(f"color: {styles.TEXT_PRIMARY};")
+        head_col.addWidget(tip)
         body.addLayout(head_col)
         body.addSpacing(4)
         body.addWidget(self._build_popout())
