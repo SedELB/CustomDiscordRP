@@ -6,7 +6,7 @@ from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF
 from PyQt6.QtGui import QPixmap, QCursor, QPainter, QPen, QFont, QColor, QBrush, QPainterPath
 from PyQt6.QtWidgets import (
     QDialog, QWidget, QFrame, QLabel, QPushButton, QLineEdit, QFileDialog,
-    QVBoxLayout, QHBoxLayout,
+    QVBoxLayout, QHBoxLayout, QRadioButton, QButtonGroup,
 )
 import styles
 import qt_utils
@@ -93,7 +93,7 @@ class _ExampleCanvas(QWidget):
         f = QFont(); f.setPointSize(7); f.setBold(True)
         p.setFont(f)
         p.setPen(QColor(styles.TEXT_MUTED))
-        p.drawText(cx + 12, cy + 18, "PLAYING A GAME")
+        p.drawText(cx + 12, cy + 18, "PLAYING")
 
         img_x, img_y, img_sz = cx + 12, cy + 26, 56
         accent = QColor(styles.ACCENT)
@@ -313,7 +313,11 @@ class ProfileEditor(QDialog):
         act_lay.setContentsMargins(12, 10, 12, 12)
         act_lay.setSpacing(6)
 
-        act_lay.addWidget(_label("PLAYING A GAME", size=8, bold=True, muted=True))
+        initial_type = self.profile.get("activity_type", 0)
+        verbs = {0: "PLAYING", 2: "LISTENING", 3: "WATCHING", 5: "COMPETING"}
+        initial_verb = verbs.get(initial_type, "PLAYING")
+        self.lbl_activity_type = _label(initial_verb, size=8, bold=True, muted=True)
+        act_lay.addWidget(self.lbl_activity_type)
 
         act_row = QHBoxLayout()
         act_row.setSpacing(12)
@@ -396,6 +400,26 @@ class ProfileEditor(QDialog):
 
     def _build_discord_section(self):
         panel, lay = self._section("DISCORD")
+
+        lay.addWidget(_label("Activity Type", size=9, bold=True))
+        type_row = QHBoxLayout()
+        self.activity_group = QButtonGroup(self)
+        
+        types = [(0, "Playing"), (2, "Listening"), (3, "Watching"), (5, "Competing")]
+        current_type = self.profile.get("activity_type", 0)
+        
+        for val, name in types:
+            btn = QRadioButton(name)
+            self.activity_group.addButton(btn, val)
+            if val == current_type:
+                btn.setChecked(True)
+            type_row.addWidget(btn)
+        
+        type_row.addStretch()
+        self.activity_group.idToggled.connect(self._on_activity_type_changed)
+        lay.addLayout(type_row)
+        lay.addSpacing(4)
+
         lay.addWidget(_label("Application ID", size=9, bold=True))
         self.edit_app_id = _field("123456789012345678", self.profile.get("discord_app_id", ""))
         lay.addWidget(self.edit_app_id)
@@ -529,6 +553,12 @@ class ProfileEditor(QDialog):
     def _elapsed_toggled(self, checked):
         self.lbl_elapsed.setVisible(checked)
 
+    def _on_activity_type_changed(self, btn_id, checked):
+        if not checked:
+            return
+        verbs = {0: "PLAYING", 2: "LISTENING", 3: "WATCHING", 5: "COMPETING"}
+        self.lbl_activity_type.setText(verbs.get(btn_id, "PLAYING"))
+
     def _open_image_picker(self):
         # Brandfetch matches brand names, so search the app name itself.
         default_query = (self.edit_name.text() or self.edit_title.text() or "").strip()
@@ -629,6 +659,7 @@ class ProfileEditor(QDialog):
         p["small_image_key"], p["small_image_url"] = self._split_key_or_url(self.edit_small_key.text())
         p["large_image_path"] = self.large_image_path
         p["show_elapsed"] = self.switch_elapsed.isChecked()
+        p["activity_type"] = self.activity_group.checkedId()
         if "enabled" not in p:
             p["enabled"] = True
 
